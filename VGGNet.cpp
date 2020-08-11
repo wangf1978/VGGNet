@@ -103,7 +103,7 @@ int VGGNet::train(const TCHAR* szImageSetRootPath, const TCHAR* szTrainSetStateF
 	}
 
 	auto criterion = torch::nn::CrossEntropyLoss();
-	auto optimizer = torch::optim::SGD(parameters(), torch::optim::SGDOptions(0.0001).momentum(0.9));
+	auto optimizer = torch::optim::SGD(parameters(), torch::optim::SGDOptions(0.001).momentum(0.9));
 	tm_end = std::chrono::system_clock::now();
 	printf("It takes %lld msec to prepare training classifying cats and dogs.\n", 
 		std::chrono::duration_cast<std::chrono::milliseconds>(tm_end - tm_start).count());
@@ -136,7 +136,7 @@ int VGGNet::train(const TCHAR* szImageSetRootPath, const TCHAR* szTrainSetStateF
 				continue;
 
 			_stprintf_s(szImageFile, _T("%s\\training_set\\%s"), szDirPath, cszImgFilePath);
-			if (m_imageprocessor.ToTensor(szImageFile, tensor_input, 0.5f, 0.5f) != 0)
+			if (m_imageprocessor.ToTensor(szImageFile, tensor_input) != 0)
 				continue;
 
 			//_tprintf(_T("now training %s for the file: %s.\n"), 
@@ -243,7 +243,7 @@ void VGGNet::verify(const TCHAR* szImageSetRootPath, const TCHAR* szPreTrainSetS
 		}
 
 		_stprintf_s(szImageFile, _T("%s\\test_set\\%s"), szDirPath, cszImgFilePath);
-		if (m_imageprocessor.ToTensor(szImageFile, tensor_input, 0.5f, 0.5f) != 0)
+		if (m_imageprocessor.ToTensor(szImageFile, tensor_input) != 0)
 			continue;
 
 		// Label在这里必须是一阶向量，里面元素必须是整数类型
@@ -280,7 +280,7 @@ void VGGNet::classify(const TCHAR* cszImageFile)
 	auto tm_end = tm_start;
 	torch::Tensor tensor_input;
 
-	if (m_imageprocessor.ToTensor(cszImageFile, tensor_input, 0.5f, 0.5f) != 0)
+	if (m_imageprocessor.ToTensor(cszImageFile, tensor_input) != 0)
 	{
 		printf("Failed to convert the image to tensor.\n");
 		return;

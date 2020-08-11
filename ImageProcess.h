@@ -21,7 +21,9 @@ public:
 	~ImageProcess();
 
 	HRESULT			Init(UINT outWidth, UINT outHeight);
-	HRESULT			ToTensor(const TCHAR* cszImageFile, torch::Tensor& tensor, float med=.0f, float std=1.f);
+	void			SetRGBMeansAndStds(float means[3], float stds[3]);
+	void			SetGreyScaleMeanAndStd(float mean, float std);
+	HRESULT			ToTensor(const TCHAR* cszImageFile, torch::Tensor& tensor);
 	void			Uninit();
 
 	static void		SaveAs(ComPtr<IWICBitmap>& bitmap, PCWSTR filename);
@@ -44,5 +46,10 @@ protected:
 
 	UINT			m_outWidth = 0;
 	UINT			m_outHeight = 0;
+
+	float			m_RGB_means[3] = { 0.485f, 0.456f, 0.406f };
+	float			m_RGB_stds[3] = { 0.229f, 0.224f, 0.225f };
+	float			m_GreyScale_mean = 0.5f;
+	float			m_GreyScale_std = 0.5f;
 };
 

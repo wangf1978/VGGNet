@@ -16,12 +16,12 @@ ImageProcess::ImageProcess()
 	// If the project is in a debug build, enable Direct2D debugging via SDK Layers.
 	options.debugLevel = D2D1_DEBUG_LEVEL_INFORMATION;
 #endif
-	if (SUCCEEDED(hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED,
+	if (FAILED(hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED,
 		__uuidof(ID2D1Factory2), &options, &m_spD2D1Factory)))
 		printf("Failed to create D2D1 factory {hr: 0X%X}.\n", hr);
 
 	// Create the image factory
-	if (SUCCEEDED(hr = CoCreateInstance(CLSID_WICImagingFactory,
+	if (FAILED(hr = CoCreateInstance(CLSID_WICImagingFactory,
 		nullptr, CLSCTX_INPROC_SERVER, IID_IWICImagingFactory, (LPVOID*)&m_spWICImageFactory)))
 		printf("Failed to create WICImaging Factory {hr: 0X%X}.\n", hr);
 }
@@ -77,6 +77,21 @@ void ImageProcess::Uninit()
 	}
 }
 
+void ImageProcess::SetRGBMeansAndStds(float means[3], float stds[3])
+{
+	for (int i = 0; i < 3; i++)
+	{
+		m_RGB_means[i] = means[i];
+		m_RGB_stds[i] = stds[i];
+	}
+}
+
+void ImageProcess::SetGreyScaleMeanAndStd(float mean, float std)
+{
+	m_GreyScale_mean = mean;
+	m_GreyScale_std = std;
+}
+
 bool ImageProcess::GetImageDrawRect(UINT target_width, UINT target_height, UINT image_width, UINT image_height, D2D1_RECT_F& dst_rect)
 {
 	if (target_width == 0 || target_height == 0 || image_width == 0 || image_height == 0)
@@ -104,7 +119,7 @@ bool ImageProcess::GetImageDrawRect(UINT target_width, UINT target_height, UINT 
 	return true;
 }
 
-HRESULT ImageProcess::ToTensor(const TCHAR* cszImageFile, torch::Tensor& tensor, float med, float std)
+HRESULT ImageProcess::ToTensor(const TCHAR* cszImageFile, torch::Tensor& tensor)
 {
 	HRESULT hr = S_OK;
 	ComPtr<IWICBitmapDecoder> spDecoder;				// Image decoder
@@ -233,7 +248,7 @@ HRESULT ImageProcess::ToTensor(const TCHAR* cszImageFile, torch::Tensor& tensor,
 			for (int j = 0; j < outWidth; j++)
 			{
 				int pos = c * outWidth*outHeight + i * outWidth + j;
-				res_data[pos] = ((pBGRABuf[i * outWidth * 4 + j * 4 + 2 - c]) / 255.0f - med) / std;
+				res_data[pos] = ((pBGRABuf[i * outWidth * 4 + j * 4 + 2 - c]) / 255.0f - m_RGB_means[c]) / m_RGB_stds[c];
 			}
 		}
 	}
