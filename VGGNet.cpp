@@ -31,43 +31,12 @@ VGGNet::VGGNet(int num_classes)
 	, FC35(register_module("FC35",Linear(4096, 4096)))
 	, FC38(register_module("FC38",Linear(4096, num_classes)))
 {
-	HRESULT hr = S_OK;
-
-	// Create D2D1 factory to create the related render target and D2D1 objects
-	D2D1_FACTORY_OPTIONS options;
-	ZeroMemory(&options, sizeof(D2D1_FACTORY_OPTIONS));
-#if defined(_DEBUG)
-	// If the project is in a debug build, enable Direct2D debugging via SDK Layers.
-	options.debugLevel = D2D1_DEBUG_LEVEL_INFORMATION;
-#endif
-	if (SUCCEEDED(hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED,
-		__uuidof(ID2D1Factory2), &options, &m_spD2D1Factory)))
-	{
-		// Create the image factory
-		if (SUCCEEDED(hr = CoCreateInstance(CLSID_WICImagingFactory,
-			nullptr, CLSCTX_INPROC_SERVER, IID_IWICImagingFactory, (LPVOID*)&m_spWICImageFactory)))
-		{
-			// 创建一个Pre-multiplexed BGRA的224x224的WICBitmap
-			if (SUCCEEDED(hr = m_spWICImageFactory->CreateBitmap(VGG_INPUT_IMG_WIDTH, VGG_INPUT_IMG_HEIGHT, GUID_WICPixelFormat32bppPBGRA,
-				WICBitmapCacheOnDemand, &m_spNetInputBitmap)))
-			{
-				// 在此WICBitmap上创建D2D1 Render Target
-				D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_DEFAULT,
-					D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), 96, 96);
-				if (SUCCEEDED(hr = m_spD2D1Factory->CreateWicBitmapRenderTarget(m_spNetInputBitmap.Get(), props, &m_spRenderTarget)))
-				{
-					hr = m_spRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Black, 1.0f), &m_spBGBrush);
-				}
-			}
-		}
-	}
-
-	m_pBGRABuf = new unsigned char[VGG_INPUT_IMG_WIDTH*VGG_INPUT_IMG_HEIGHT * 4];
+	m_imageprocessor.Init(VGG_INPUT_IMG_WIDTH, VGG_INPUT_IMG_HEIGHT);
 }
 
 VGGNet::~VGGNet()
 {
-	delete[] m_pBGRABuf;
+	m_imageprocessor.Uninit();
 }
 
 int64_t VGGNet::num_flat_features(torch::Tensor input)
@@ -78,33 +47,6 @@ int64_t VGGNet::num_flat_features(torch::Tensor input)
 		num_features *= s;
 	}
 	return num_features;
-}
-
-bool VGGNet::GetImageDrawRect(UINT target_width, UINT target_height, UINT image_width, UINT image_height, D2D1_RECT_F& dst_rect)
-{
-	if (target_width == 0 || target_height == 0 || image_width == 0 || image_height == 0)
-		return false;
-
-	if (target_width*image_height >= image_width*target_height)
-	{
-		// align with height
-		FLOAT ratio = (FLOAT)target_height / image_height;
-		dst_rect.top = 0;
-		dst_rect.bottom = (FLOAT)target_height;
-		dst_rect.left = (target_width - image_width * ratio) / 2.0f;
-		dst_rect.right = (target_width + image_width * ratio) / 2.0f;
-	}
-	else
-	{
-		// align with width
-		FLOAT ratio = (FLOAT)target_width / image_width;
-		dst_rect.left = 0;
-		dst_rect.right = (FLOAT)target_width;
-		dst_rect.top = (target_height - image_height * ratio) / 2.0f;
-		dst_rect.bottom = (target_height + image_height * ratio) / 2.0f;
-	}
-
-	return true;
 }
 
 torch::Tensor VGGNet::forward(torch::Tensor input)
@@ -153,14 +95,15 @@ int VGGNet::train(const TCHAR* szImageSetRootPath, const TCHAR* szTrainSetStateF
 	if (szDirPath[ccDirPath - 1] == _T('\\'))
 		szDirPath[ccDirPath - 1] = _T('\0');
 
-	if (FAILED(loadImageSet(szImageSetRootPath, train_image_files, train_image_labels, train_image_shuffle_set, true)))
+	if (FAILED(loadImageSet(szImageSetRootPath, 
+		train_image_files, train_image_labels, train_image_shuffle_set, true)))
 	{
 		printf("Failed to load the train image/label set.\n");
 		return -1;
 	}
 
 	auto criterion = torch::nn::CrossEntropyLoss();
-	auto optimizer = torch::optim::SGD(parameters(), torch::optim::SGDOptions(0.001).momentum(0.9));
+	auto optimizer = torch::optim::SGD(parameters(), torch::optim::SGDOptions(0.0001).momentum(0.9));
 	tm_end = std::chrono::system_clock::now();
 	printf("It takes %lld msec to prepare training classifying cats and dogs.\n", 
 		std::chrono::duration_cast<std::chrono::milliseconds>(tm_end - tm_start).count());
@@ -193,7 +136,7 @@ int VGGNet::train(const TCHAR* szImageSetRootPath, const TCHAR* szTrainSetStateF
 				continue;
 
 			_stprintf_s(szImageFile, _T("%s\\training_set\\%s"), szDirPath, cszImgFilePath);
-			if (toTensor(szImageFile, tensor_input) != 0)
+			if (m_imageprocessor.ToTensor(szImageFile, tensor_input, 0.5f, 0.5f) != 0)
 				continue;
 
 			//_tprintf(_T("now training %s for the file: %s.\n"), 
@@ -300,7 +243,7 @@ void VGGNet::verify(const TCHAR* szImageSetRootPath, const TCHAR* szPreTrainSetS
 		}
 
 		_stprintf_s(szImageFile, _T("%s\\test_set\\%s"), szDirPath, cszImgFilePath);
-		if (toTensor(szImageFile, tensor_input) != 0)
+		if (m_imageprocessor.ToTensor(szImageFile, tensor_input, 0.5f, 0.5f) != 0)
 			continue;
 
 		// Label在这里必须是一阶向量，里面元素必须是整数类型
@@ -337,7 +280,7 @@ void VGGNet::classify(const TCHAR* cszImageFile)
 	auto tm_end = tm_start;
 	torch::Tensor tensor_input;
 
-	if (toTensor(cszImageFile, tensor_input) != 0)
+	if (m_imageprocessor.ToTensor(cszImageFile, tensor_input, 0.5f, 0.5f) != 0)
 	{
 		printf("Failed to convert the image to tensor.\n");
 		return;
@@ -351,115 +294,6 @@ void VGGNet::classify(const TCHAR* cszImageFile)
 	_tprintf(_T("This image seems to %s, cost %lld msec.\n"),
 		m_image_labels.size() > std::get<1>(predicted).item<int>()?m_image_labels[std::get<1>(predicted).item<int>()].c_str():_T("Unknown"),
 		std::chrono::duration_cast<std::chrono::milliseconds>(tm_end - tm_start).count());
-}
-
-HRESULT VGGNet::toTensor(const TCHAR* cszImageFile, torch::Tensor& tensor)
-{
-	HRESULT hr = S_OK;
-	ComPtr<IWICBitmapDecoder> spDecoder;				// Image decoder
-	ComPtr<IWICBitmapFrameDecode> spBitmapFrameDecode;	// Decoded image
-	ComPtr<IWICBitmapSource> spConverter;				// Converted image
-	ComPtr<IWICBitmap> spHandWrittenBitmap;				// The original bitmap
-	ComPtr<ID2D1Bitmap> spD2D1Bitmap;					// D2D1 bitmap
-
-	UINT uiFrameCount = 0;
-	UINT uiWidth = 0, uiHeight = 0;
-	WICPixelFormatGUID pixelFormat;
-	D2D1_RECT_F dst_rect = { 0, 0, VGG_INPUT_IMG_WIDTH, VGG_INPUT_IMG_HEIGHT };
-	WICRect rect = { 0, 0, VGG_INPUT_IMG_WIDTH, VGG_INPUT_IMG_HEIGHT };
-
-	if (cszImageFile == NULL || _taccess(cszImageFile, 0) != 0)
-		return E_INVALIDARG;
-
-	wchar_t* wszInputFile = NULL;
-	size_t cbFileName = _tcslen(cszImageFile);
-#ifndef _UNICODE
-	wszInputFile = new wchar_t[cbFileName + 1];
-	if (MultiByteToWideChar(CP_UTF8, 0, cszCatImageFile, -1, wszInputFile, cbFileName + 1) == 0)
-	{
-		delete[] wszInputFile;
-		return -1;
-	}
-#else
-	wszInputFile = (wchar_t*)cszImageFile;
-#endif
-
-	// 加载图片, 并为其创建图像解码器
-	if (FAILED(m_spWICImageFactory->CreateDecoderFromFilename(wszInputFile, NULL,
-		GENERIC_READ, WICDecodeMetadataCacheOnDemand, &spDecoder)))
-		goto done;
-
-	// 得到多少帧图像在图片文件中，如果无可解帧，结束程序
-	if (FAILED(hr = spDecoder->GetFrameCount(&uiFrameCount)) || uiFrameCount == 0)
-		goto done;
-
-	// 得到第一帧图片
-	if (FAILED(hr = hr = spDecoder->GetFrame(0, &spBitmapFrameDecode)))
-		goto done;
-
-	// 得到图片大小
-	if (FAILED(hr = spBitmapFrameDecode->GetSize(&uiWidth, &uiHeight)))
-		goto done;
-
-	// 得到图片像素格式
-	if (FAILED(hr = spBitmapFrameDecode->GetPixelFormat(&pixelFormat)))
-		goto done;
-
-	// 如果图片不是Pre-multiplexed BGRA格式，转化成这个格式，以便用D2D硬件处理图形转换
-	if (!IsEqualGUID(pixelFormat, GUID_WICPixelFormat32bppPBGRA))
-	{
-		if (FAILED(hr = WICConvertBitmapSource(GUID_WICPixelFormat32bppPBGRA,
-			spBitmapFrameDecode.Get(), &spConverter)))
-			goto done;
-	}
-	else
-		spConverter = spBitmapFrameDecode;
-
-	// 转化为Pre-multiplexed BGRA格式的WICBitmap
-	if (FAILED(hr = m_spWICImageFactory->CreateBitmapFromSource(
-		spConverter.Get(), WICBitmapCacheOnDemand, &spHandWrittenBitmap)))
-		goto done;
-
-	// 将转化为Pre-multiplexed BGRA格式的WICBitmap的原始图片转换到D2D1Bitmap对象中来，以便后面的缩放处理
-	if (FAILED(hr = m_spRenderTarget->CreateBitmapFromWicBitmap(spHandWrittenBitmap.Get(), &spD2D1Bitmap)))
-		goto done;
-
-	// 将图片进行缩放处理，转化为224x224的图片
-	m_spRenderTarget->BeginDraw();
-		
-	m_spRenderTarget->FillRectangle(dst_rect, m_spBGBrush.Get());
-
-	if (GetImageDrawRect(VGG_INPUT_IMG_WIDTH, VGG_INPUT_IMG_HEIGHT, uiWidth, uiHeight, dst_rect))
-		m_spRenderTarget->DrawBitmap(spD2D1Bitmap.Get(), &dst_rect);
-	
-	m_spRenderTarget->EndDraw();
-
-	//ImageProcess::SaveAs(m_spNetInputBitmap, L"I:\\test.png");
-
-	// 并将图像每个channel中数据转化为[-1.0, 1.0]的raw data
-	hr = m_spNetInputBitmap->CopyPixels(&rect, VGG_INPUT_IMG_WIDTH * 4, 4 * VGG_INPUT_IMG_WIDTH * VGG_INPUT_IMG_HEIGHT, m_pBGRABuf);
-
-	float* res_data = (float*)malloc(3 * VGG_INPUT_IMG_WIDTH * VGG_INPUT_IMG_HEIGHT * sizeof(float));
-	for (int c = 0; c < 3; c++)
-	{
-		for (int i = 0; i < VGG_INPUT_IMG_HEIGHT; i++)
-		{
-			for (int j = 0; j < VGG_INPUT_IMG_WIDTH; j++)
-			{
-				int pos = c * VGG_INPUT_IMG_WIDTH*VGG_INPUT_IMG_HEIGHT + i * VGG_INPUT_IMG_WIDTH + j;
-				res_data[pos] = ((255 - m_pBGRABuf[i * VGG_INPUT_IMG_WIDTH * 4 + j * 4 + 2 - c]) / 255.0f - 0.5f) / 0.5f;
-			}
-		}
-	}
-
-	tensor = torch::from_blob(res_data, { 1, 3, VGG_INPUT_IMG_WIDTH, VGG_INPUT_IMG_HEIGHT }, FreeBlob);
-
-	hr = S_OK;
-
-done:
-	if (wszInputFile != NULL && wszInputFile != cszImageFile)
-		delete[] wszInputFile;
-	return hr;
 }
 
 HRESULT VGGNet::loadImageSet(
@@ -724,7 +558,7 @@ int VGGNet::loadnet(const TCHAR* szTrainSetStateFilePath)
 		return -1;
 	}
 
-	printf("Save the supported labels to be classified to %s.\n", szLabelFilePath.c_str());
+	printf("Load the supported labels to be classified to %s.\n", szLabelFilePath.c_str());
 	return 0;
 }
 

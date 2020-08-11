@@ -17,6 +17,7 @@
 #include <shlwapi.h>
 
 #include "VGGNet.h"
+#include "ImageProcess.h"
 
 void FreeBlob(void* p)
 {
@@ -59,6 +60,28 @@ int _tmain(int argc, const TCHAR* argv[])
 
 	VGGNet vgg16_net(NUM_OF_CLASSES);
 
+	// Test image processor, and convert the image to torch tensor
+#if 0
+	ImageProcess imageprocessor;
+	if (SUCCEEDED(imageprocessor.Init(10, 10)))
+	{
+		torch::Tensor tensor;
+		if (SUCCEEDED(imageprocessor.ToTensor(_T("I:\\RGB.png"), tensor)))
+		{
+			printf("before transforming....\n");
+			std::cout << tensor << '\n';
+		}
+
+		if (SUCCEEDED(imageprocessor.ToTensor(_T("I:\\RGB.png"), tensor, 0.5f, 0.5f)))
+		{
+			printf("after transforming....\n");
+			std::cout << tensor << '\n';
+		}
+	}
+
+	imageprocessor.Uninit();
+#endif
+
 	tm_end = std::chrono::system_clock::now();
 	printf("It took %lld msec to construct the VGG16 network.\n", 
 		std::chrono::duration_cast<std::chrono::milliseconds>(tm_end - tm_start).count());
@@ -92,6 +115,11 @@ int _tmain(int argc, const TCHAR* argv[])
 		{
 			PrintHelp();
 			goto done;
+		}
+
+		if (vgg16_net.loadnet(argv[3]) != 0)
+		{
+			_tprintf(_T("Failed to load the VGG network from %s, retraining the VGG net.\n"), argv[3]);
 		}
 
 		vgg16_net.train(argv[2], argv[3]);

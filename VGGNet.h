@@ -33,16 +33,14 @@ public:
 	int				loadnet(const TCHAR* szTrainSetStateFilePath);
 	void			classify(const TCHAR* szImageFile);
 
-protected:
+public:
 	int64_t			num_flat_features(torch::Tensor input);
-	HRESULT			toTensor(const TCHAR* cszImageFile, torch::Tensor& tensor);
 	HRESULT			loadImageSet(const TCHAR* szImageSetRootPath,
 								 std::vector<tstring>& image_files,
 								 std::vector<tstring>& image_labels,
 								 std::vector<size_t>& image_shuffle_set,
 								 bool bTrainSet = true, bool bShuffle = true);
 	HRESULT			loadLabels(const TCHAR* szImageSetRootPath, std::vector<tstring>& image_labels);
-	bool			GetImageDrawRect(UINT target_width, UINT target_height, UINT image_width, UINT image_height, D2D1_RECT_F& dst_rect);
 
 protected:
 	// block 1
@@ -72,18 +70,8 @@ protected:
 	Linear			FC35;
 	Linear			FC38;
 
-	ComPtr<ID2D1Factory>	
-					m_spD2D1Factory;			// D2D1 factory
-	ComPtr<IWICImagingFactory>	
-					m_spWICImageFactory;		// Image codec factory
-	ComPtr<IWICBitmap>		
-					m_spNetInputBitmap;			// The final bitmap 1x224x224
-	ComPtr<ID2D1RenderTarget>
-					m_spRenderTarget;			// Render target to scale image
-	ComPtr<ID2D1SolidColorBrush>
-					m_spBGBrush;				// the background brush
-	unsigned char*	m_pBGRABuf = NULL;
 	std::vector<tstring>
 					m_image_labels;				// the image labels for this network
+	ImageProcess	m_imageprocessor;
 };
 
