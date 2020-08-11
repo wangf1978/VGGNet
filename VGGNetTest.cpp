@@ -54,7 +54,8 @@ int _tmain(int argc, const TCHAR* argv[])
 		return 0;
 	}
 
-	CoInitializeEx(NULL, COINIT_MULTITHREADED);
+	if (FAILED(CoInitializeEx(NULL, COINIT_MULTITHREADED)))
+		return -1;
 
 	VGGNet vgg16_net(NUM_OF_CLASSES);
 
@@ -115,7 +116,7 @@ int _tmain(int argc, const TCHAR* argv[])
 
 		if (vgg16_net.loadnet(argv[2]) != 0)
 		{
-			printf("Failed to load the VGG network from %s.\n", argv[2]);
+			_tprintf(_T("Failed to load the VGG network from %s.\n"), argv[2]);
 			goto done;
 		}
 

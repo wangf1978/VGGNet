@@ -42,6 +42,7 @@ protected:
 								 std::vector<size_t>& image_shuffle_set,
 								 bool bTrainSet = true, bool bShuffle = true);
 	HRESULT			loadLabels(const TCHAR* szImageSetRootPath, std::vector<tstring>& image_labels);
+	bool			GetImageDrawRect(UINT target_width, UINT target_height, UINT image_width, UINT image_height, D2D1_RECT_F& dst_rect);
 
 protected:
 	// block 1

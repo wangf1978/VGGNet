@@ -80,6 +80,33 @@ int64_t VGGNet::num_flat_features(torch::Tensor input)
 	return num_features;
 }
 
+bool VGGNet::GetImageDrawRect(UINT target_width, UINT target_height, UINT image_width, UINT image_height, D2D1_RECT_F& dst_rect)
+{
+	if (target_width == 0 || target_height == 0 || image_width == 0 || image_height == 0)
+		return false;
+
+	if (target_width*image_height >= image_width*target_height)
+	{
+		// align with height
+		FLOAT ratio = (FLOAT)target_height / image_height;
+		dst_rect.top = 0;
+		dst_rect.bottom = (FLOAT)target_height;
+		dst_rect.left = (target_width - image_width * ratio) / 2.0f;
+		dst_rect.right = (target_width + image_width * ratio) / 2.0f;
+	}
+	else
+	{
+		// align with width
+		FLOAT ratio = (FLOAT)target_width / image_width;
+		dst_rect.left = 0;
+		dst_rect.right = (FLOAT)target_width;
+		dst_rect.top = (target_height - image_height * ratio) / 2.0f;
+		dst_rect.bottom = (target_height + image_height * ratio) / 2.0f;
+	}
+
+	return true;
+}
+
 torch::Tensor VGGNet::forward(torch::Tensor input)
 {
 	namespace F = torch::nn::functional;
@@ -140,7 +167,7 @@ int VGGNet::train(const TCHAR* szImageSetRootPath, const TCHAR* szTrainSetStateF
 
 	tm_start = std::chrono::system_clock::now();
 	
-	int64_t kNumberOfEpochs = 1;
+	int64_t kNumberOfEpochs = 2;
 
 	torch::Tensor tensor_input;
 	for (int64_t epoch = 1; epoch <= kNumberOfEpochs; ++epoch)
@@ -158,7 +185,8 @@ int VGGNet::train(const TCHAR* szImageSetRootPath, const TCHAR* szTrainSetStateF
 
 			size_t label = 0;
 			for (label = 0; label < train_image_labels.size(); label++)
-				if (_tcsnicmp(train_image_labels[label].c_str(), cszImgFilePath, (pszTmp - cszImgFilePath) / sizeof(TCHAR)) == 0)
+				if (_tcsnicmp(train_image_labels[label].c_str(), cszImgFilePath, 
+					(pszTmp - cszImgFilePath) / sizeof(TCHAR)) == 0)
 					break;
 
 			if (label >= train_image_labels.size())
@@ -168,7 +196,8 @@ int VGGNet::train(const TCHAR* szImageSetRootPath, const TCHAR* szTrainSetStateF
 			if (toTensor(szImageFile, tensor_input) != 0)
 				continue;
 
-			_tprintf(_T("now training %s for the file: %s.\n"), train_image_labels[label].c_str(), cszImgFilePath);
+			//_tprintf(_T("now training %s for the file: %s.\n"), 
+			//	train_image_labels[label].c_str(), cszImgFilePath);
 			// Label在这里必须是一阶向量，里面元素必须是整数类型
 			torch::Tensor tensor_label = torch::tensor({ (int64_t)label });
 
@@ -223,7 +252,8 @@ void VGGNet::verify(const TCHAR* szImageSetRootPath, const TCHAR* szPreTrainSetS
 	if (szDirPath[ccDirPath - 1] == _T('\\'))
 		szDirPath[ccDirPath - 1] = _T('\0');
 
-	if (FAILED(loadImageSet(szImageSetRootPath, test_image_files, test_image_labels, test_image_shuffle_set, false)))
+	if (FAILED(loadImageSet(szImageSetRootPath, 
+		test_image_files, test_image_labels, test_image_shuffle_set, false)))
 	{
 		printf("Failed to load the test image/label sets.\n");
 		return;
@@ -258,7 +288,8 @@ void VGGNet::verify(const TCHAR* szImageSetRootPath, const TCHAR* szPreTrainSetS
 
 		size_t label = 0;
 		for (label = 0; label < m_image_labels.size(); label++)
-			if (_tcsnicmp(m_image_labels[label].c_str(), cszImgFilePath, (pszTmp - cszImgFilePath) / sizeof(TCHAR)) == 0)
+			if (_tcsnicmp(m_image_labels[label].c_str(), 
+				cszImgFilePath, (pszTmp - cszImgFilePath) / sizeof(TCHAR)) == 0)
 				break;
 
 		if (label >= m_image_labels.size())
@@ -278,8 +309,9 @@ void VGGNet::verify(const TCHAR* szImageSetRootPath, const TCHAR* szPreTrainSetS
 		auto outputs = forward(tensor_input);
 		auto predicted = torch::max(outputs, 1);
 
-		_tprintf(_T("predicted: %s, fact: %s --> file: %s.\n"), 
-			m_image_labels[std::get<1>(predicted).item<int>()].c_str(), m_image_labels[tensor_label[0].item<int>()].c_str(), szImageFile);
+		//_tprintf(_T("predicted: %s, fact: %s --> file: %s.\n"), 
+		//	m_image_labels[std::get<1>(predicted).item<int>()].c_str(), 
+		//	m_image_labels[tensor_label[0].item<int>()].c_str(), szImageFile);
 
 		if (tensor_label[0].item<int>() == std::get<1>(predicted).item<int>())
 			passed_test_items++;
@@ -333,9 +365,11 @@ HRESULT VGGNet::toTensor(const TCHAR* cszImageFile, torch::Tensor& tensor)
 	UINT uiFrameCount = 0;
 	UINT uiWidth = 0, uiHeight = 0;
 	WICPixelFormatGUID pixelFormat;
+	D2D1_RECT_F dst_rect = { 0, 0, VGG_INPUT_IMG_WIDTH, VGG_INPUT_IMG_HEIGHT };
+	WICRect rect = { 0, 0, VGG_INPUT_IMG_WIDTH, VGG_INPUT_IMG_HEIGHT };
 
 	if (cszImageFile == NULL || _taccess(cszImageFile, 0) != 0)
-		return -1;
+		return E_INVALIDARG;
 
 	wchar_t* wszInputFile = NULL;
 	size_t cbFileName = _tcslen(cszImageFile);
@@ -391,53 +425,36 @@ HRESULT VGGNet::toTensor(const TCHAR* cszImageFile, torch::Tensor& tensor)
 		goto done;
 
 	// 将图片进行缩放处理，转化为224x224的图片
-	{
-		m_spRenderTarget->BeginDraw();
-		D2D1_RECT_F dst_rect = { 0, 0, VGG_INPUT_IMG_WIDTH, VGG_INPUT_IMG_HEIGHT };
-		m_spRenderTarget->FillRectangle(dst_rect, m_spBGBrush.Get());
+	m_spRenderTarget->BeginDraw();
 		
-		// do the transform
-		FLOAT fN = uiWidth > uiHeight ? uiWidth : uiHeight;
-		FLOAT x1 = (fN - uiWidth) / 2.0f;
-		FLOAT y1 = (fN - uiHeight) / 2.0f;
-		FLOAT x2 = x1 + uiWidth;
-		FLOAT y2 = y1 + uiHeight;
-		FLOAT ratio_h = VGG_INPUT_IMG_HEIGHT / fN;
-		FLOAT ratio_w = VGG_INPUT_IMG_WIDTH / fN;
+	m_spRenderTarget->FillRectangle(dst_rect, m_spBGBrush.Get());
 
-		dst_rect.left = x1 * ratio_w;
-		dst_rect.right = x2 * ratio_w;
-		dst_rect.top = y1 * ratio_h;
-		dst_rect.bottom = y2 * ratio_h;
-
+	if (GetImageDrawRect(VGG_INPUT_IMG_WIDTH, VGG_INPUT_IMG_HEIGHT, uiWidth, uiHeight, dst_rect))
 		m_spRenderTarget->DrawBitmap(spD2D1Bitmap.Get(), &dst_rect);
-		m_spRenderTarget->EndDraw();
-	}
+	
+	m_spRenderTarget->EndDraw();
 
 	//ImageProcess::SaveAs(m_spNetInputBitmap, L"I:\\test.png");
 
 	// 并将图像每个channel中数据转化为[-1.0, 1.0]的raw data
-	{
-		WICRect rect = { 0, 0, VGG_INPUT_IMG_WIDTH, VGG_INPUT_IMG_HEIGHT };
-		hr = m_spNetInputBitmap->CopyPixels(&rect, VGG_INPUT_IMG_WIDTH * 4, 4 * VGG_INPUT_IMG_WIDTH * VGG_INPUT_IMG_HEIGHT, m_pBGRABuf);
+	hr = m_spNetInputBitmap->CopyPixels(&rect, VGG_INPUT_IMG_WIDTH * 4, 4 * VGG_INPUT_IMG_WIDTH * VGG_INPUT_IMG_HEIGHT, m_pBGRABuf);
 
-		float* res_data = (float*)malloc(3 * VGG_INPUT_IMG_WIDTH * VGG_INPUT_IMG_HEIGHT * sizeof(float));
-		for (int c = 0; c < 3; c++)
+	float* res_data = (float*)malloc(3 * VGG_INPUT_IMG_WIDTH * VGG_INPUT_IMG_HEIGHT * sizeof(float));
+	for (int c = 0; c < 3; c++)
+	{
+		for (int i = 0; i < VGG_INPUT_IMG_HEIGHT; i++)
 		{
-			for (int i = 0; i < VGG_INPUT_IMG_HEIGHT; i++)
+			for (int j = 0; j < VGG_INPUT_IMG_WIDTH; j++)
 			{
-				for (int j = 0; j < VGG_INPUT_IMG_WIDTH; j++)
-				{
-					int pos = c * VGG_INPUT_IMG_WIDTH*VGG_INPUT_IMG_HEIGHT + i * VGG_INPUT_IMG_WIDTH + j;
-					res_data[pos] = ((255 - m_pBGRABuf[i * VGG_INPUT_IMG_WIDTH * 4 + j * 4 + 2 - c]) / 255.0f - 0.5f) / 0.5f;
-				}
+				int pos = c * VGG_INPUT_IMG_WIDTH*VGG_INPUT_IMG_HEIGHT + i * VGG_INPUT_IMG_WIDTH + j;
+				res_data[pos] = ((255 - m_pBGRABuf[i * VGG_INPUT_IMG_WIDTH * 4 + j * 4 + 2 - c]) / 255.0f - 0.5f) / 0.5f;
 			}
 		}
-
-		tensor = torch::from_blob(res_data, { 1, 3, VGG_INPUT_IMG_WIDTH, VGG_INPUT_IMG_HEIGHT }, FreeBlob);
-
-		hr = S_OK;
 	}
+
+	tensor = torch::from_blob(res_data, { 1, 3, VGG_INPUT_IMG_WIDTH, VGG_INPUT_IMG_HEIGHT }, FreeBlob);
+
+	hr = S_OK;
 
 done:
 	if (wszInputFile != NULL && wszInputFile != cszImageFile)
@@ -461,7 +478,8 @@ HRESULT VGGNet::loadImageSet(
 	if (szDirPath[ccDirPath - 1] == _T('\\'))
 		szDirPath[ccDirPath - 1] = _T('\0');
 
-	_stprintf_s(szImageFile, MAX_PATH, _T("%s\\%s\\*.*"), szDirPath, bTrainSet ? _T("training_set") : _T("test_set"));
+	_stprintf_s(szImageFile, MAX_PATH, _T("%s\\%s\\*.*"), 
+		szDirPath, bTrainSet ? _T("training_set") : _T("test_set"));
 
 	// Find all image file names under the train set, 2 level
 	WIN32_FIND_DATA find_data;
@@ -476,7 +494,8 @@ HRESULT VGGNet::loadImageSet(
 			continue;
 
 		WIN32_FIND_DATA image_find_data;
-		_stprintf_s(szImageFile, MAX_PATH, _T("%s\\%s\\%s\\*.*"), szDirPath, bTrainSet?_T("training_set"):_T("test_set"), find_data.cFileName);
+		_stprintf_s(szImageFile, MAX_PATH, _T("%s\\%s\\%s\\*.*"), 
+			szDirPath, bTrainSet?_T("training_set"):_T("test_set"), find_data.cFileName);
 
 		BOOL bHaveTrainImages = FALSE;
 		HANDLE hImgFind = FindFirstFile(szImageFile, &image_find_data);
