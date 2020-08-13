@@ -25,7 +25,7 @@ void FreeBlob(void* p)
 	free(p);
 }
 
-#define NUM_OF_CLASSES		2
+#define NUM_OF_CLASSES		1000
 
 void PrintHelp()
 {

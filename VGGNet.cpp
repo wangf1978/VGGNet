@@ -12,21 +12,35 @@ extern void FreeBlob(void* p);
 
 #define VGG_INPUT_IMG_WIDTH						224
 #define VGG_INPUT_IMG_HEIGHT					224
+#define VGG_TRAIN_BATCH_SIZE					64
 
 VGGNet::VGGNet(int num_classes)
 	: C1  (register_module("C1",  Conv2d(Conv2dOptions(  3,  64, 3).padding(1))))
+	, C1B (register_module("C1B", BatchNorm2d(BatchNorm2dOptions(64))))
 	, C3  (register_module("C3",  Conv2d(Conv2dOptions( 64,  64, 3).padding(1))))
+	, C3B (register_module("C3B", BatchNorm2d(BatchNorm2dOptions(64))))
 	, C6  (register_module("C6",  Conv2d(Conv2dOptions( 64, 128, 3).padding(1))))
+	, C6B (register_module("C6B", BatchNorm2d(BatchNorm2dOptions(128))))
 	, C8  (register_module("C8",  Conv2d(Conv2dOptions(128, 128, 3).padding(1))))
+	, C8B (register_module("C8B", BatchNorm2d(BatchNorm2dOptions(128))))
 	, C11 (register_module("C11", Conv2d(Conv2dOptions(128, 256, 3).padding(1))))
+	, C11B(register_module("C11B",BatchNorm2d(BatchNorm2dOptions(256))))
 	, C13 (register_module("C13", Conv2d(Conv2dOptions(256, 256, 3).padding(1))))
+	, C13B(register_module("C13B",BatchNorm2d(BatchNorm2dOptions(256))))
 	, C15 (register_module("C15", Conv2d(Conv2dOptions(256, 256, 3).padding(1))))
+	, C15B(register_module("C15B",BatchNorm2d(BatchNorm2dOptions(256))))
 	, C18 (register_module("C18", Conv2d(Conv2dOptions(256, 512, 3).padding(1))))
+	, C18B(register_module("C18B",BatchNorm2d(BatchNorm2dOptions(512))))
 	, C20 (register_module("C20", Conv2d(Conv2dOptions(512, 512, 3).padding(1))))
+	, C20B(register_module("C20B",BatchNorm2d(BatchNorm2dOptions(512))))
 	, C22 (register_module("C22", Conv2d(Conv2dOptions(512, 512, 3).padding(1))))
+	, C22B(register_module("C22B",BatchNorm2d(BatchNorm2dOptions(512))))
 	, C25 (register_module("C25", Conv2d(Conv2dOptions(512, 512, 3).padding(1))))
+	, C25B(register_module("C25B",BatchNorm2d(BatchNorm2dOptions(512))))
 	, C27 (register_module("C27", Conv2d(Conv2dOptions(512, 512, 3).padding(1))))
+	, C27B(register_module("C27B",BatchNorm2d(BatchNorm2dOptions(512))))
 	, C29 (register_module("C29", Conv2d(Conv2dOptions(512, 512, 3).padding(1))))
+	, C29B(register_module("C29B",BatchNorm2d(BatchNorm2dOptions(512))))
 	, FC32(register_module("FC32",Linear(512 * 7 * 7, 4096)))
 	, FC35(register_module("FC35",Linear(4096, 4096)))
 	, FC38(register_module("FC38",Linear(4096, num_classes)))
@@ -49,26 +63,46 @@ int64_t VGGNet::num_flat_features(torch::Tensor input)
 	return num_features;
 }
 
-torch::Tensor VGGNet::forward(torch::Tensor input)
+torch::Tensor VGGNet::forward(torch::Tensor& x)
 {
 	namespace F = torch::nn::functional;
 
-	// block#1
-	auto x = F::max_pool2d(F::relu(C3(F::relu(C1(input)))), F::MaxPool2dFuncOptions(2));
+	if (m_bEnableBatchNorm)
+	{
+		// block#1
+		x = F::max_pool2d(F::relu(C3B(C3(F::relu(C1B(C1(x)))))), F::MaxPool2dFuncOptions(2));
 
-	// block#2
-	x = F::max_pool2d(F::relu(C8(F::relu(C6(x)))), F::MaxPool2dFuncOptions(2));
+		// block#2
+		x = F::max_pool2d(F::relu(C8B(C8(F::relu(C6B(C6(x)))))), F::MaxPool2dFuncOptions(2));
 
-	// block#3
-	x = F::max_pool2d(F::relu(C15(F::relu(C13(F::relu(C11(x)))))), F::MaxPool2dFuncOptions(2));
+		// block#3
+		x = F::max_pool2d(F::relu(C15B(C15(F::relu(C13B(C13(F::relu(C11B(C11(x))))))))), F::MaxPool2dFuncOptions(2));
 
-	// block#4
-	x = F::max_pool2d(F::relu(C22(F::relu(C20(F::relu(C18(x)))))), F::MaxPool2dFuncOptions(2));
+		// block#4
+		x = F::max_pool2d(F::relu(C22B(C22(F::relu(C20B(C20(F::relu(C18B(C18(x))))))))), F::MaxPool2dFuncOptions(2));
 
-	// block#5
-	x = F::max_pool2d(F::relu(C29(F::relu(C27(F::relu(C25(x)))))), F::MaxPool2dFuncOptions(2));
+		// block#5
+		x = F::max_pool2d(F::relu(C29B(C29(F::relu(C27B(C27(F::relu(C25B(C25(x))))))))), F::MaxPool2dFuncOptions(2));
+	}
+	else
+	{
+		// block#1
+		x = F::max_pool2d(F::relu(C3(F::relu(C1(x)))), F::MaxPool2dFuncOptions(2));
 
-	x = x.view({ -1, num_flat_features(x) });
+		// block#2
+		x = F::max_pool2d(F::relu(C8(F::relu(C6(x)))), F::MaxPool2dFuncOptions(2));
+
+		// block#3
+		x = F::max_pool2d(F::relu(C15(F::relu(C13(F::relu(C11(x)))))), F::MaxPool2dFuncOptions(2));
+
+		// block#4
+		x = F::max_pool2d(F::relu(C22(F::relu(C20(F::relu(C18(x)))))), F::MaxPool2dFuncOptions(2));
+
+		// block#5
+		x = F::max_pool2d(F::relu(C29(F::relu(C27(F::relu(C25(x)))))), F::MaxPool2dFuncOptions(2));
+	}
+
+	x = x.view({ x.size(0), -1 });
 
 	// classifier
 	x = F::dropout(F::relu(FC32(x)), F::DropoutFuncOptions().p(0.5));
@@ -116,37 +150,60 @@ int VGGNet::train(const TCHAR* szImageSetRootPath, const TCHAR* szTrainSetStateF
 	for (int64_t epoch = 1; epoch <= kNumberOfEpochs; ++epoch)
 	{
 		auto running_loss = 0.;
+		size_t totals = 0;
 		// Take the image shuffle
-		for(size_t i = 0;i<train_image_shuffle_set.size();i++)
+		for(size_t i = 0;i<(train_image_shuffle_set.size() + VGG_TRAIN_BATCH_SIZE -1)/ VGG_TRAIN_BATCH_SIZE;i++)
 		{
-			tstring& strImgFilePath = train_image_files[train_image_shuffle_set[i]];
-			const TCHAR* cszImgFilePath = strImgFilePath.c_str();
-			const TCHAR* pszTmp = _tcschr(cszImgFilePath, _T('\\'));
+			std::vector<VGGNet::tstring> image_batches;
+			std::vector<long long> label_batches;
 
-			if (pszTmp == NULL)
-				continue;
-
-			size_t label = 0;
-			for (label = 0; label < train_image_labels.size(); label++)
-				if (_tcsnicmp(train_image_labels[label].c_str(), cszImgFilePath, 
-					(pszTmp - cszImgFilePath) / sizeof(TCHAR)) == 0)
+			for (int b = 0; b < VGG_TRAIN_BATCH_SIZE; b++)
+			{
+				size_t idx = i * VGG_TRAIN_BATCH_SIZE + b;
+				if (idx >= train_image_shuffle_set.size())
 					break;
 
-			if (label >= train_image_labels.size())
-				continue;
+				tstring& strImgFilePath = train_image_files[train_image_shuffle_set[idx]];
+				const TCHAR* cszImgFilePath = strImgFilePath.c_str();
+				const TCHAR* pszTmp = _tcschr(cszImgFilePath, _T('\\'));
 
-			_stprintf_s(szImageFile, _T("%s\\training_set\\%s"), szDirPath, cszImgFilePath);
-			if (m_imageprocessor.ToTensor(szImageFile, tensor_input) != 0)
+				if (pszTmp == NULL)
+					continue;
+
+				size_t label = 0;
+				for (label = 0; label < train_image_labels.size(); label++)
+					if (_tcsnicmp(train_image_labels[label].c_str(), cszImgFilePath,
+						(pszTmp - cszImgFilePath) / sizeof(TCHAR)) == 0)
+						break;
+
+				if (label >= train_image_labels.size())
+					continue;
+
+				_stprintf_s(szImageFile, _T("%s\\training_set\\%s"), szDirPath, cszImgFilePath);
+
+				image_batches.push_back(szImageFile);
+				label_batches.push_back((long long)label);
+			}
+
+			if (image_batches.size() == 0)
+				continue;
+			
+			if (m_imageprocessor.ToTensor(image_batches, tensor_input) != 0)
 				continue;
 
 			//_tprintf(_T("now training %s for the file: %s.\n"), 
 			//	train_image_labels[label].c_str(), cszImgFilePath);
 			// Label在这里必须是一阶向量，里面元素必须是整数类型
-			torch::Tensor tensor_label = torch::tensor({ (int64_t)label });
+			torch::Tensor tensor_label = torch::tensor(label_batches);
+			//tensor_label = tensor_label.view({ 1, -1 });
+
+			totals += label_batches.size();
 
 			optimizer.zero_grad();
 			// 喂数据给网络
 			auto outputs = forward(tensor_input);
+
+			//std::cout << "tensor_label:" << tensor_label << "\noutputs.sizes(): " << outputs << '\n';
 
 			//std::cout << outputs << '\n';
 			//std::cout << tensor_label << '\n';
@@ -158,9 +215,9 @@ int VGGNet::train(const TCHAR* szImageSetRootPath, const TCHAR* szTrainSetStateF
 			optimizer.step();
 
 			running_loss += loss.item().toFloat();
-			if ((i + 1) % 100 == 0)
+			if ((i + 1) % 10 == 0)
 			{
-				printf("[%lld, %5zu] loss: %.3f\n", epoch, i + 1, running_loss / 100);
+				printf("[%lld, %5zu] loss: %.3f\n", epoch, i + 1, running_loss / 10);
 				running_loss = 0.;
 			}
 		}

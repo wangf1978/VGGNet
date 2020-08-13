@@ -9,6 +9,7 @@
 #include <d2d1.h>
 #include <d2d1_2.h>
 #include <shlwapi.h>
+#include <string>
 
 #pragma once
 
@@ -17,6 +18,8 @@ using namespace Microsoft::WRL;
 class ImageProcess
 {
 public:
+	using tstring = std::basic_string<TCHAR, std::char_traits<TCHAR>, std::allocator<TCHAR>>;
+
 	ImageProcess();
 	~ImageProcess();
 
@@ -24,6 +27,7 @@ public:
 	void			SetRGBMeansAndStds(float means[3], float stds[3]);
 	void			SetGreyScaleMeanAndStd(float mean, float std);
 	HRESULT			ToTensor(const TCHAR* cszImageFile, torch::Tensor& tensor);
+	HRESULT			ToTensor(std::vector<tstring> strImageFiles, torch::Tensor& tensor);
 	void			Uninit();
 
 	static void		SaveAs(ComPtr<IWICBitmap>& bitmap, PCWSTR filename);

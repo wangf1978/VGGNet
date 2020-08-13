@@ -26,7 +26,7 @@ public:
 	VGGNet(int num_classes);
 	~VGGNet();
 
-	torch::Tensor	forward(torch::Tensor input);
+	torch::Tensor	forward(torch::Tensor& input);
 	int				train(const TCHAR* szTrainSetRootPath, const TCHAR* szTrainSetStateFilePath);
 	void			verify(const TCHAR* szTrainSetRootPath, const TCHAR* szTrainSetStateFilePath);
 	int				savenet(const TCHAR* szTrainSetStateFilePath);
@@ -45,26 +45,39 @@ public:
 protected:
 	// block 1
 	Conv2d			C1;
+	BatchNorm2d		C1B;
 	Conv2d			C3;
+	BatchNorm2d		C3B;
 
 	// block 2
 	Conv2d			C6;
+	BatchNorm2d		C6B;
 	Conv2d			C8;
+	BatchNorm2d		C8B;
 
 	// block 3
 	Conv2d			C11;
+	BatchNorm2d		C11B;
 	Conv2d			C13;
+	BatchNorm2d		C13B;
 	Conv2d			C15;
+	BatchNorm2d		C15B;
 
 	// block 4
 	Conv2d			C18;
+	BatchNorm2d		C18B;
 	Conv2d			C20;
+	BatchNorm2d		C20B;
 	Conv2d			C22;
+	BatchNorm2d		C22B;
 
 	// block 5
 	Conv2d			C25;
+	BatchNorm2d		C25B;
 	Conv2d			C27;
+	BatchNorm2d		C27B;
 	Conv2d			C29;
+	BatchNorm2d		C29B;
 
 	Linear			FC32;
 	Linear			FC35;
@@ -73,5 +86,6 @@ protected:
 	std::vector<tstring>
 					m_image_labels;				// the image labels for this network
 	ImageProcess	m_imageprocessor;
+	bool			m_bEnableBatchNorm = true;
 };
 

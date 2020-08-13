@@ -222,7 +222,7 @@ HRESULT ImageProcess::ToTensor(const TCHAR* cszImageFile, torch::Tensor& tensor)
 		if (FAILED(hr = spRenderTarget->CreateBitmapFromWicBitmap(spHandWrittenBitmap.Get(), &spD2D1Bitmap)))
 			goto done;
 
-		// 将图片进行缩放处理，转化为224x224的图片
+		// 将图片进行缩放处理，转化为m_outWidthxm_outHeight的图片
 		spRenderTarget->BeginDraw();
 
 		spRenderTarget->FillRectangle(dst_rect, spBGBrush.Get());
@@ -261,6 +261,165 @@ done:
 	if (wszInputFile != NULL && wszInputFile != cszImageFile)
 		delete[] wszInputFile;
 
+	if (pBGRABuf != m_pBGRABuf)
+		delete[] pBGRABuf;
+
+	return hr;
+}
+
+HRESULT ImageProcess::ToTensor(std::vector<tstring> strImageFiles, torch::Tensor& tensor)
+{
+	HRESULT hr = S_OK;
+	ComPtr<IWICBitmapDecoder> spDecoder;				// Image decoder
+	ComPtr<IWICBitmapFrameDecode> spBitmapFrameDecode;	// Decoded image
+	ComPtr<IWICBitmapSource> spConverter;				// Converted image
+	ComPtr<IWICBitmap> spHandWrittenBitmap;				// The original bitmap
+	ComPtr<ID2D1Bitmap> spD2D1Bitmap;					// D2D1 bitmap
+
+	ComPtr<IWICBitmap> spNetInputBitmap = m_spNetInputBitmap;
+	ComPtr<ID2D1RenderTarget> spRenderTarget = m_spRenderTarget;
+	ComPtr<ID2D1SolidColorBrush> spBGBrush = m_spBGBrush;
+
+	UINT uiFrameCount = 0;
+	UINT uiWidth = 0, uiHeight = 0;
+	UINT outWidth = m_outWidth;
+	UINT outHeight = m_outHeight;
+	WICPixelFormatGUID pixelFormat;
+	unsigned char* pBGRABuf = m_pBGRABuf;
+	D2D1_RECT_F dst_rect = { 0, 0, outWidth, outHeight };
+	WICRect rect = { 0, 0, outWidth, outHeight };
+	wchar_t wszImageFile[MAX_PATH + 1] = { 0 };
+	const wchar_t* wszInputFile = NULL;
+	float* res_data = NULL;
+
+	if (strImageFiles.size() == 0)
+		return E_INVALIDARG;
+
+	if (outWidth != 0 && outHeight != 0)
+		res_data = new float[strImageFiles.size() * 3 * outWidth*outHeight];
+
+	for (size_t b = 0; b < strImageFiles.size(); b++)
+	{
+		int pos = 0;
+		BOOL bDynamic = FALSE;
+#ifndef _UNICODE
+		if (MultiByteToWideChar(CP_UTF8, 0, strImageFiles[b].c_str(), -1, wszImageFile, MAX_PATH + 1) == 0)
+		{
+			hr = E_FAIL;
+			goto done;
+		}
+		wszInputFile = (const wchar_t*)wszImageFile;
+#else
+		wszInputFile = strImageFiles[b].c_str();
+#endif
+
+		// 加载图片, 并为其创建图像解码器
+		if (FAILED(m_spWICImageFactory->CreateDecoderFromFilename(wszInputFile, NULL,
+			GENERIC_READ, WICDecodeMetadataCacheOnDemand, &spDecoder)))
+			goto done;
+
+		// 得到多少帧图像在图片文件中，如果无可解帧，结束此函数
+		if (FAILED(hr = spDecoder->GetFrameCount(&uiFrameCount)) || uiFrameCount == 0)
+			goto done;
+
+		// 得到第一帧图片
+		if (FAILED(hr = hr = spDecoder->GetFrame(0, &spBitmapFrameDecode)))
+			goto done;
+
+		// 得到图片大小
+		if (FAILED(hr = spBitmapFrameDecode->GetSize(&uiWidth, &uiHeight)))
+			goto done;
+
+		// 调整转换和输出
+		if (outWidth == 0)
+		{
+			outWidth = uiWidth;
+			dst_rect.right = uiWidth;
+			rect.Width = uiWidth;
+			bDynamic = TRUE;
+		}
+
+		if (outHeight == 0)
+		{
+			outHeight = uiHeight;
+			dst_rect.bottom = uiHeight;
+			rect.Height = uiHeight;
+			bDynamic = TRUE;
+		}
+
+		// Create a buffer to be used for converting ARGB to tensor
+		if (bDynamic)
+		{
+			if (pBGRABuf == NULL)
+				pBGRABuf = new unsigned char[outWidth*outHeight * 4];
+
+			if (res_data == NULL)
+				res_data = new float[strImageFiles.size() * 3 * outWidth*outHeight];
+		}
+
+		// 得到图片像素格式
+		if (FAILED(hr = spBitmapFrameDecode->GetPixelFormat(&pixelFormat)))
+			goto done;
+
+		// 如果图片不是Pre-multiplexed BGRA格式，转化成这个格式，以便用D2D硬件处理图形转换
+		if (!IsEqualGUID(pixelFormat, GUID_WICPixelFormat32bppPBGRA))
+		{
+			if (FAILED(hr = WICConvertBitmapSource(GUID_WICPixelFormat32bppPBGRA,
+				spBitmapFrameDecode.Get(), &spConverter)))
+				goto done;
+		}
+		else
+			spConverter = spBitmapFrameDecode;
+
+		// If the width and height are not matched with the image width and height, scale the image
+		if (!bDynamic && (outWidth != uiWidth || outHeight != uiHeight))
+		{
+			// 转化为Pre-multiplexed BGRA格式的WICBitmap
+			if (FAILED(hr = m_spWICImageFactory->CreateBitmapFromSource(
+				spConverter.Get(), WICBitmapCacheOnDemand, &spHandWrittenBitmap)))
+				goto done;
+
+			// 将转化为Pre-multiplexed BGRA格式的WICBitmap的原始图片转换到D2D1Bitmap对象中来，以便后面的缩放处理
+			if (FAILED(hr = spRenderTarget->CreateBitmapFromWicBitmap(spHandWrittenBitmap.Get(), &spD2D1Bitmap)))
+				goto done;
+
+			// 将图片进行缩放处理，转化为m_outWidthxm_outHeight的图片
+			spRenderTarget->BeginDraw();
+
+			spRenderTarget->FillRectangle(dst_rect, spBGBrush.Get());
+
+			if (GetImageDrawRect(outWidth, outHeight, uiWidth, uiHeight, dst_rect))
+				spRenderTarget->DrawBitmap(spD2D1Bitmap.Get(), &dst_rect);
+
+			spRenderTarget->EndDraw();
+
+			//ImageProcess::SaveAs(spNetInputBitmap, L"I:\\test.png");
+
+			// 并将图像每个channel中数据转化为[-1.0, 1.0]的raw data
+			hr = spNetInputBitmap->CopyPixels(&rect, outWidth * 4, 4 * outWidth * outHeight, pBGRABuf);
+		}
+		else
+			hr = spConverter->CopyPixels(&rect, outWidth * 4, 4 * outWidth * outHeight, pBGRABuf);
+
+		pos = b * 3 * outWidth*outHeight;
+		for (int c = 0; c < 3; c++)
+		{
+			for (int i = 0; i < outHeight; i++)
+			{
+				for (int j = 0; j < outWidth; j++)
+				{
+					int cpos = pos + c * outWidth*outHeight + i * outWidth + j;
+					res_data[cpos] = ((pBGRABuf[i * outWidth * 4 + j * 4 + 2 - c]) / 255.0f - m_RGB_means[c]) / m_RGB_stds[c];
+				}
+			}
+		}
+	}
+
+	tensor = torch::from_blob(res_data, { (long long)strImageFiles.size(), 3, outWidth, outHeight }, FreeBlob);
+
+	hr = S_OK;
+
+done:
 	if (pBGRABuf != m_pBGRABuf)
 		delete[] pBGRABuf;
 
