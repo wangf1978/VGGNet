@@ -1,0 +1,164 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+
+<nns>
+  <nn name="VGGD_NoBatchNorm">
+    <modules>
+      <!-- Block#1 -->
+      <module name="C1"  type="conv2d" in_channels="3"   out_channels="64"  kernel_size="3" padding="1" />
+      <module name="C3"  type="conv2d" in_channels="64"  out_channels="64"  kernel_size="3" padding="1" />
+      <!-- Block#2 -->
+      <module name="C6"  type="conv2d" in_channels="64"  out_channels="128" kernel_size="3" padding="1" />
+      <module name="C8"  type="conv2d" in_channels="128" out_channels="128" kernel_size="3" padding="1" />
+      <!-- Block#3 -->
+      <module name="C11" type="conv2d" in_channels="128" out_channels="256" kernel_size="3" padding="1" />
+      <module name="C13" type="conv2d" in_channels="256" out_channels="256" kernel_size="3" padding="1" />
+      <module name="C15" type="conv2d" in_channels="256" out_channels="256" kernel_size="3" padding="1" />
+      <!-- Block#4 -->
+      <module name="C18" type="conv2d" in_channels="256" out_channels="512" kernel_size="3" padding="1" />
+      <module name="C20" type="conv2d" in_channels="512" out_channels="512" kernel_size="3" padding="1" />
+      <module name="C22" type="conv2d" in_channels="512" out_channels="512" kernel_size="3" padding="1" />
+      <!-- Block#5 -->
+      <module name="C25" type="conv2d" in_channels="512" out_channels="512" kernel_size="3" padding="1" />
+      <module name="C27" type="conv2d" in_channels="512" out_channels="512" kernel_size="3" padding="1" />
+      <module name="C29" type="conv2d" in_channels="512" out_channels="512" kernel_size="3" padding="1" />
+      <!-- FC -->
+      <module name="FC32" type="linear" in_features="25088" out_features="4096" />
+      <module name="FC35" type="linear" in_features="4096"  out_features="4096" />
+      <module name="FC38" type="linear" in_features="4096"  out_features="1000" />
+    </modules>
+    <forward>
+      <f module="C1" />
+      <f functional="relu" inplace="true" />
+      <f module="C3" />
+      <f functional="relu" inplace="true" />
+      <f functional="max_pool2d" kernel_size="2" />
+      <f module="C6" />
+      <f functional="relu" inplace="true" />
+      <f module="C8" />
+      <f functional="relu" inplace="true" />
+      <f functional="max_pool2d" kernel_size="2" />
+      <f module="C11" />
+      <f functional="relu" inplace="true" />
+      <f module="C13" />
+      <f functional="relu" inplace="true" />
+      <f module="C15" />
+      <f functional="relu" inplace="true" />
+      <f functional="max_pool2d" kernel_size="2" />
+      <f module="C18" />
+      <f functional="relu" inplace="true" />
+      <f module="C20" />
+      <f functional="relu" inplace="true" />
+      <f module="C22" />
+      <f functional="relu" inplace="true" />
+      <f functional="max_pool2d" kernel_size="2" />
+      <f module="C25" />
+      <f functional="relu" inplace="true" />
+      <f module="C27" />
+      <f functional="relu" inplace="true" />
+      <f module="C29" />
+      <f functional="relu" inplace="true" />
+      <f functional="max_pool2d" kernel_size="2" />
+      <f view="flat" />
+      <f module="FC32" />
+      <f functional="relu" inplace="true" />
+      <f functional="dropout" inplace="true" p="0.5" />
+      <f module="FC35" />
+      <f functional="relu" inplace="true" />
+      <f functional="dropout" inplace="true" p="0.5" />
+      <f module="FC38" />
+    </forward>
+  </nn>
+  <nn name="VGGD_BatchNorm">
+    <modules>
+      <!-- Block#1 -->
+      <module name="C1"   type="conv2d" in_channels="3"   out_channels="64"  kernel_size="3" padding="1" />
+      <module name="C1B"  type="batchnorm2d" num_features="64" />
+      <module name="C3"   type="conv2d" in_channels="64"  out_channels="64"  kernel_size="3" padding="1" />
+      <module name="C3B"  type="batchnorm2d" num_features="64" />
+      <!-- Block#2 -->
+      <module name="C6"   type="conv2d" in_channels="64"  out_channels="128" kernel_size="3" padding="1" />
+      <module name="C6B"  type="batchnorm2d" num_features="128" />
+      <module name="C8"   type="conv2d" in_channels="128" out_channels="128" kernel_size="3" padding="1" />
+      <module name="C8B"  type="batchnorm2d" num_features="128" />
+      <!-- Block#3 -->
+      <module name="C11"  type="conv2d" in_channels="128" out_channels="256" kernel_size="3" padding="1" />
+      <module name="C11B" type="batchnorm2d" num_features="256" />
+      <module name="C13"  type="conv2d" in_channels="256" out_channels="256" kernel_size="3" padding="1" />
+      <module name="C13B" type="batchnorm2d" num_features="256" />
+      <module name="C15"  type="conv2d" in_channels="256" out_channels="256" kernel_size="3" padding="1" />
+      <module name="C15B" type="batchnorm2d" num_features="256" />
+      <!-- Block#4 -->
+      <module name="C18"  type="conv2d" in_channels="256" out_channels="512" kernel_size="3" padding="1" />
+      <module name="C18B" type="batchnorm2d" num_features="512" />
+      <module name="C20"  type="conv2d" in_channels="512" out_channels="512" kernel_size="3" padding="1" />
+      <module name="C20B" type="batchnorm2d" num_features="512" />
+      <module name="C22"  type="conv2d" in_channels="512" out_channels="512" kernel_size="3" padding="1" />
+      <module name="C22B" type="batchnorm2d" num_features="512" />
+      <!-- Block#5 -->
+      <module name="C25"  type="conv2d" in_channels="512" out_channels="512" kernel_size="3" padding="1" />
+      <module name="C25B" type="batchnorm2d" num_features="512" />
+      <module name="C27"  type="conv2d" in_channels="512" out_channels="512" kernel_size="3" padding="1" />
+      <module name="C27B" type="batchnorm2d" num_features="512" />
+      <module name="C29"  type="conv2d" in_channels="512" out_channels="512" kernel_size="3" padding="1" />
+      <module name="C29B" type="batchnorm2d" num_features="512" />
+      <!-- FC -->
+      <module name="FC32" type="linear" in_features="25088" out_features="4096" />
+      <module name="FC35" type="linear" in_features="4096"  out_features="4096" />
+      <module name="FC38" type="linear" in_features="4096"  out_features="1000" />
+    </modules>
+    <forward>
+      <f module="C1" />
+      <f module="C1B" />
+      <f functional="relu" inplace="true" />
+      <f module="C3" />
+      <f module="C3B" />
+      <f functional="relu" inplace="true" />
+      <f functional="max_pool2d" kernel_size="2" />
+      <f module="C6" />
+      <f module="C6B" />
+      <f functional="relu" inplace="true" />
+      <f module="C8" />
+      <f module="C8B" />
+      <f functional="relu" inplace="true" />
+      <f functional="max_pool2d" kernel_size="2" />
+      <f module="C11" />
+      <f module="C11B" />
+      <f functional="relu" inplace="true" />
+      <f module="C13" />
+      <f module="C13B" />
+      <f functional="relu" inplace="true" />
+      <f module="C15" />
+      <f module="C15B" />
+      <f functional="relu" inplace="true" />
+      <f functional="max_pool2d" kernel_size="2" />
+      <f module="C18" />
+      <f module="C18B" />
+      <f functional="relu" inplace="true" />
+      <f module="C20" />
+      <f module="C20B" />
+      <f functional="relu" inplace="true" />
+      <f module="C22" />
+      <f module="C22B" />
+      <f functional="relu" inplace="true" />
+      <f functional="max_pool2d" kernel_size="2" />
+      <f module="C25" />
+      <f module="C25B" />
+      <f functional="relu" inplace="true" />
+      <f module="C27" />
+      <f module="C27B" />
+      <f functional="relu" inplace="true" />
+      <f module="C29" />
+      <f module="C29B" />
+      <f functional="relu" inplace="true" />
+      <f functional="max_pool2d" kernel_size="2" />
+      <f view="flat" />
+      <f module="FC32" />
+      <f functional="relu" inplace="true" />
+      <f functional="dropout" inplace="true" p="0.5" />
+      <f module="FC35" />
+      <f functional="relu" inplace="true" />
+      <f functional="dropout" inplace="true" p="0.5" />
+      <f module="FC38" />
+    </forward>
+  </nn> 
+</nns>

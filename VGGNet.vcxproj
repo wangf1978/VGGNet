@@ -161,16 +161,30 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="BaseNNet.cpp" />
+    <ClCompile Include="CmdLineParser.cpp" />
     <ClCompile Include="ImageProcess.cpp" />
+    <ClCompile Include="tinyxml2.cpp" />
     <ClCompile Include="VGGNet.cpp" />
     <ClCompile Include="VGGNetTest.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="BaseNNet.h" />
+    <ClInclude Include="CmdLineParser.h" />
     <ClInclude Include="ImageProcess.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="tinyxml2.h" />
+    <ClInclude Include="util.h" />
     <ClInclude Include="VGGNet.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="readme.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="VGGNet.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Xml Include="nnconfig.xml" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

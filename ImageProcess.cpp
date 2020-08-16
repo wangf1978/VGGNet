@@ -292,6 +292,11 @@ HRESULT ImageProcess::ToTensor(std::vector<tstring> strImageFiles, torch::Tensor
 	const wchar_t* wszInputFile = NULL;
 	float* res_data = NULL;
 
+	static long long toTensorDuration = 0LL;
+
+	auto tm_start = std::chrono::system_clock::now();
+	auto tm_end = tm_start;
+
 	if (strImageFiles.size() == 0)
 		return E_INVALIDARG;
 
@@ -422,6 +427,15 @@ HRESULT ImageProcess::ToTensor(std::vector<tstring> strImageFiles, torch::Tensor
 done:
 	if (pBGRABuf != m_pBGRABuf)
 		delete[] pBGRABuf;
+
+	tm_end = std::chrono::system_clock::now();
+	toTensorDuration += std::chrono::duration_cast<std::chrono::milliseconds>(tm_end - tm_start).count();
+
+	//printf("Load batch tensors, cost %lldh:%02dm:%02d.%03ds\n", 
+	//	toTensorDuration/1000/3600, 
+	//	(int)(toTensorDuration/1000/60%60), 
+	//	(int)(toTensorDuration/1000%60),
+	//	(int)(toTensorDuration%1000));
 
 	return hr;
 }

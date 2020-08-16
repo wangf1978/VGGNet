@@ -13,6 +13,7 @@
 
 using namespace Microsoft::WRL;
 using namespace torch::nn;
+using namespace std;
 
 #pragma once
 
@@ -38,7 +39,6 @@ public:
 	HRESULT			loadImageSet(const TCHAR* szImageSetRootPath,
 								 std::vector<tstring>& image_files,
 								 std::vector<tstring>& image_labels,
-								 std::vector<size_t>& image_shuffle_set,
 								 bool bTrainSet = true, bool bShuffle = true);
 	HRESULT			loadLabels(const TCHAR* szImageSetRootPath, std::vector<tstring>& image_labels);
 

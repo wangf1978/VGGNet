@@ -18,6 +18,8 @@
 
 #include "VGGNet.h"
 #include "ImageProcess.h"
+#include "CmdLineParser.h"
+#include "BaseNNet.h"
 
 void FreeBlob(void* p)
 {
@@ -29,7 +31,7 @@ void FreeBlob(void* p)
 
 void PrintHelp()
 {
-	printf("Usage:\n\tVGGNet [command] [train/test image set] [train_net_state_filename] [testimagefile]\n");
+	printf("Usage:\n\tVGGNet [options] command [args...]\n");
 
 	printf("\t\tcommands:\n");
 	printf("\t\t\tstate:\t\tPrint the VGG layout\n");
@@ -37,11 +39,29 @@ void PrintHelp()
 	printf("\t\t\tverify:\t\tVerify the train network with the test set\n");
 	printf("\t\t\tclassify:\tClassify the input image\n");
 
+	printf("\t\targs:\n");
+	
+
 	printf("\t\texamples:\n");
 	printf("\t\t\tVGGNet state\n");
 	printf("\t\t\tVGGNet train I:\\CatDog I:\\catdog.pt\n");
 	printf("\t\t\tVGGNet verify I:\\CatDog I:\\catdog.pt\n");
 	printf("\t\t\tVGGNet classify I:\\catdog.pt I:\\test.png\n");
+}
+
+void freeargv(int argc, char** argv)
+{
+	if (argv == NULL)
+		return;
+
+	for (int i = 0; i < argc; i++)
+	{
+		if (argv[i] == NULL)
+			continue;
+
+		delete[] argv[i];
+	}
+	delete argv;
 }
 
 int _tmain(int argc, const TCHAR* argv[])
@@ -55,10 +75,48 @@ int _tmain(int argc, const TCHAR* argv[])
 		return 0;
 	}
 
-	if (FAILED(CoInitializeEx(NULL, COINIT_MULTITHREADED)))
-		return -1;
+	const char** u8argv = NULL;
+#ifdef _UNICODE
+	u8argv = new const char*[argc];
+	for (int i = 0; i < argc; i++)
+	{
+		if (argv[i] == NULL)
+			u8argv[i] = NULL;
+		else
+		{
+			size_t ccLen = _tcslen(argv[i]);
+			u8argv[i] = new const char[ccLen * 4 + 1];
+			WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, (LPSTR)u8argv[i], ccLen * 4 + 1, NULL, NULL);
+		}
+	}
+#else
+	u8argv = (const char**)argv;
+#endif
 
-	VGGNet vgg16_net(NUM_OF_CLASSES);
+	if (CmdLineParser::ProcessCommandLineArgs(argc, u8argv) == false)
+	{
+		freeargv(argc, (char**)u8argv);
+		PrintHelp();
+		return -1;
+	}
+
+	//CmdLineParser::GetCmdLineParser().Print();
+
+	if (FAILED(CoInitializeEx(NULL, COINIT_MULTITHREADED)))
+	{
+		freeargv(argc, (char**)u8argv);
+		return -1;
+	}
+
+	BaseNNet bnnt;
+	bnnt.LoadNet("VGGD_BatchNorm");
+
+	bnnt.Print();
+
+
+	VGGNet vgg16_net(
+		CmdLineParser::GetCmdLineParser().num_classes
+	);
 
 	// Test image processor, and convert the image to torch tensor
 #if 0
@@ -158,6 +216,8 @@ int _tmain(int argc, const TCHAR* argv[])
 
 done:
 	CoUninitialize();
+
+	freeargv(argc, (char**)u8argv);
 
 	return 0;
 }

@@ -5,6 +5,11 @@ VisualStudioVersion = 15.0.28307.1209
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "VGGNet", "VGGNet.vcxproj", "{1050A0BA-5711-483A-9CEB-9E967678DE78}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{3845DD12-5511-4BB0-B32F-9EC19629D2D6}"
+	ProjectSection(SolutionItems) = preProject
+		nnconfig.xml = nnconfig.xml
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64

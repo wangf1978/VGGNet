@@ -70,19 +70,19 @@ torch::Tensor VGGNet::forward(torch::Tensor& x)
 	if (m_bEnableBatchNorm)
 	{
 		// block#1
-		x = F::max_pool2d(F::relu(C3B(C3(F::relu(C1B(C1(x)))))), F::MaxPool2dFuncOptions(2));
+		x = F::max_pool2d(F::relu(C3B(C3(F::relu(C1B(C1(x)), F::ReLUFuncOptions(true)))), F::ReLUFuncOptions(true)), F::MaxPool2dFuncOptions(2));
 
 		// block#2
-		x = F::max_pool2d(F::relu(C8B(C8(F::relu(C6B(C6(x)))))), F::MaxPool2dFuncOptions(2));
+		x = F::max_pool2d(F::relu(C8B(C8(F::relu(C6B(C6(x)), F::ReLUFuncOptions(true)))), F::ReLUFuncOptions(true)), F::MaxPool2dFuncOptions(2));
 
 		// block#3
-		x = F::max_pool2d(F::relu(C15B(C15(F::relu(C13B(C13(F::relu(C11B(C11(x))))))))), F::MaxPool2dFuncOptions(2));
+		x = F::max_pool2d(F::relu(C15B(C15(F::relu(C13B(C13(F::relu(C11B(C11(x)), F::ReLUFuncOptions(true)))), F::ReLUFuncOptions(true)))), F::ReLUFuncOptions(true)), F::MaxPool2dFuncOptions(2));
 
 		// block#4
-		x = F::max_pool2d(F::relu(C22B(C22(F::relu(C20B(C20(F::relu(C18B(C18(x))))))))), F::MaxPool2dFuncOptions(2));
+		x = F::max_pool2d(F::relu(C22B(C22(F::relu(C20B(C20(F::relu(C18B(C18(x)), F::ReLUFuncOptions(true)))), F::ReLUFuncOptions(true)))), F::ReLUFuncOptions(true)), F::MaxPool2dFuncOptions(2));
 
 		// block#5
-		x = F::max_pool2d(F::relu(C29B(C29(F::relu(C27B(C27(F::relu(C25B(C25(x))))))))), F::MaxPool2dFuncOptions(2));
+		x = F::max_pool2d(F::relu(C29B(C29(F::relu(C27B(C27(F::relu(C25B(C25(x)), F::ReLUFuncOptions(true)))), F::ReLUFuncOptions(true)))), F::ReLUFuncOptions(true)), F::MaxPool2dFuncOptions(2));
 	}
 	else
 	{
@@ -105,8 +105,8 @@ torch::Tensor VGGNet::forward(torch::Tensor& x)
 	x = x.view({ x.size(0), -1 });
 
 	// classifier
-	x = F::dropout(F::relu(FC32(x)), F::DropoutFuncOptions().p(0.5));
-	x = F::dropout(F::relu(FC35(x)), F::DropoutFuncOptions().p(0.5));
+	x = F::dropout(F::relu(FC32(x), F::ReLUFuncOptions(true)), F::DropoutFuncOptions().p(0.5).inplace(true));
+	x = F::dropout(F::relu(FC35(x), F::ReLUFuncOptions(true)), F::DropoutFuncOptions().p(0.5).inplace(true));
 	x = FC38(x);
 
 	return x;
@@ -130,27 +130,51 @@ int VGGNet::train(const TCHAR* szImageSetRootPath, const TCHAR* szTrainSetStateF
 		szDirPath[ccDirPath - 1] = _T('\0');
 
 	if (FAILED(loadImageSet(szImageSetRootPath, 
-		train_image_files, train_image_labels, train_image_shuffle_set, true)))
+		train_image_files, train_image_labels, true)))
 	{
 		printf("Failed to load the train image/label set.\n");
 		return -1;
 	}
 
+	double lr = 0.01;
 	auto criterion = torch::nn::CrossEntropyLoss();
-	auto optimizer = torch::optim::SGD(parameters(), torch::optim::SGDOptions(0.001).momentum(0.9));
+	//auto optimizer = torch::optim::SGD(parameters(), torch::optim::SGDOptions(0.001).momentum(0.9));
+	auto optimizer = torch::optim::SGD(parameters(), torch::optim::SGDOptions(lr).momentum(0.9));
 	tm_end = std::chrono::system_clock::now();
 	printf("It takes %lld msec to prepare training classifying cats and dogs.\n", 
 		std::chrono::duration_cast<std::chrono::milliseconds>(tm_end - tm_start).count());
 
 	tm_start = std::chrono::system_clock::now();
 	
-	int64_t kNumberOfEpochs = 2;
+	int64_t kNumberOfEpochs = 3;
 
 	torch::Tensor tensor_input;
 	for (int64_t epoch = 1; epoch <= kNumberOfEpochs; ++epoch)
 	{
 		auto running_loss = 0.;
 		size_t totals = 0;
+
+		// Shuffle the list
+		if (train_image_files.size() > 0)
+		{
+			// generate the shuffle list to train
+			train_image_shuffle_set.resize(train_image_files.size());
+			for (size_t i = 0; i < train_image_files.size(); i++)
+				train_image_shuffle_set[i] = i;
+			std::random_device rd;
+			std::mt19937_64 g(rd());
+			std::shuffle(train_image_shuffle_set.begin(), train_image_shuffle_set.end(), g);
+		}
+
+		for (auto& pg : optimizer.param_groups())
+		{
+			if (pg.has_options())
+			{
+				auto& options = static_cast<torch::optim::SGDOptions&>(pg.options());
+				options.lr() = lr;
+			}
+		}
+
 		// Take the image shuffle
 		for(size_t i = 0;i<(train_image_shuffle_set.size() + VGG_TRAIN_BATCH_SIZE -1)/ VGG_TRAIN_BATCH_SIZE;i++)
 		{
@@ -221,6 +245,10 @@ int VGGNet::train(const TCHAR* szImageSetRootPath, const TCHAR* szTrainSetStateF
 				running_loss = 0.;
 			}
 		}
+
+		lr = lr * 0.1;
+		if (lr < 0.00001)
+			lr = 0.00001;
 	}
 
 	printf("Finish training!\n");
@@ -253,10 +281,22 @@ void VGGNet::verify(const TCHAR* szImageSetRootPath, const TCHAR* szPreTrainSetS
 		szDirPath[ccDirPath - 1] = _T('\0');
 
 	if (FAILED(loadImageSet(szImageSetRootPath, 
-		test_image_files, test_image_labels, test_image_shuffle_set, false)))
+		test_image_files, test_image_labels, false)))
 	{
 		printf("Failed to load the test image/label sets.\n");
 		return;
+	}
+
+	// Shuffle the list
+	if (test_image_files.size() > 0)
+	{
+		// generate the shuffle list to train
+		test_image_shuffle_set.resize(test_image_files.size());
+		for (size_t i = 0; i < test_image_files.size(); i++)
+			test_image_shuffle_set[i] = i;
+		std::random_device rd;
+		std::mt19937_64 g(rd());
+		std::shuffle(test_image_shuffle_set.begin(), test_image_shuffle_set.end(), g);
 	}
 
 	tm_end = std::chrono::system_clock::now();
@@ -357,7 +397,6 @@ HRESULT VGGNet::loadImageSet(
 	const TCHAR* szRootPath,				// the root path to place training_set or test_set folder
 	std::vector<tstring>& image_files,		// the image files to be trained or tested
 	std::vector<tstring>& image_labels,		// the image label
-	std::vector<size_t>& image_shuffle_set,	// the shuffle image set, ex, [1, 0, 3, 4, 2]
 	bool bTrainSet, bool bShuffle)
 {
 	HRESULT hr = S_OK;
@@ -421,17 +460,6 @@ HRESULT VGGNet::loadImageSet(
 	} while (FindNextFile(hFind, &find_data));
 
 	FindClose(hFind);
-
-	if (image_files.size() > 0)
-	{
-		// generate the shuffle list to train
-		image_shuffle_set.resize(image_files.size());
-		for (size_t i = 0; i < image_files.size(); i++)
-			image_shuffle_set[i] = i;
-		std::random_device rd;
-		std::mt19937_64 g(rd());
-		std::shuffle(image_shuffle_set.begin(), image_shuffle_set.end(), g);
-	}
 
 	return hr;
 }
