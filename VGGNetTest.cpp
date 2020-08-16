@@ -64,6 +64,38 @@ void freeargv(int argc, char** argv)
 	delete argv;
 }
 
+void Test()
+{
+	ImageProcess imageprocessor;
+	if (SUCCEEDED(imageprocessor.Init(10, 10)))
+	{
+		torch::Tensor tensor;
+		{
+			float means[3] = { 0.f, 0.f, 0.f };
+			float stds[3] = { 1.f, 1.f, 1.f };
+			imageprocessor.SetRGBMeansAndStds(means, stds);
+		}
+		if (SUCCEEDED(imageprocessor.ToTensor(_T("I:\\RGB.png"), tensor)))
+		{
+			printf("before transforming....\n");
+			std::cout << tensor << '\n';
+		}
+
+		{
+			float means[3] = { 0.5f, 0.5f, 0.5f };
+			float stds[3] = { 0.5f, 0.5f, 0.5f };
+			imageprocessor.SetRGBMeansAndStds(means, stds);
+		}
+		if (SUCCEEDED(imageprocessor.ToTensor(_T("I:\\RGB.png"), tensor)))
+		{
+			printf("after transforming....\n");
+			std::cout << tensor << '\n';
+		}
+	}
+
+	imageprocessor.Uninit();
+}
+
 int _tmain(int argc, const TCHAR* argv[])
 {
 	auto tm_start = std::chrono::system_clock::now();
@@ -86,7 +118,7 @@ int _tmain(int argc, const TCHAR* argv[])
 		{
 			size_t ccLen = _tcslen(argv[i]);
 			u8argv[i] = new const char[ccLen * 4 + 1];
-			WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, (LPSTR)u8argv[i], ccLen * 4 + 1, NULL, NULL);
+			WideCharToMultiByte(CP_UTF8, 0, argv[i], -1, (LPSTR)u8argv[i], (int)ccLen * 4 + 1, NULL, NULL);
 		}
 	}
 #else
@@ -108,110 +140,91 @@ int _tmain(int argc, const TCHAR* argv[])
 		return -1;
 	}
 
-	BaseNNet bnnt;
-	bnnt.LoadNet("VGGD_BatchNorm");
+	CmdLineParser& ctxCmd = CmdLineParser::GetCmdLineParser();
 
-	bnnt.Print();
-
-
-	VGGNet vgg16_net(
-		CmdLineParser::GetCmdLineParser().num_classes
-	);
-
-	// Test image processor, and convert the image to torch tensor
-#if 0
-	ImageProcess imageprocessor;
-	if (SUCCEEDED(imageprocessor.Init(10, 10)))
+	VGG_CONFIG config = ctxCmd.enable_batch_norm? VGG_D_BATCHNORM: VGG_D;
+	switch (ctxCmd.nn_type)
 	{
-		torch::Tensor tensor;
-		if (SUCCEEDED(imageprocessor.ToTensor(_T("I:\\RGB.png"), tensor)))
-		{
-			printf("before transforming....\n");
-			std::cout << tensor << '\n';
-		}
-
-		if (SUCCEEDED(imageprocessor.ToTensor(_T("I:\\RGB.png"), tensor, 0.5f, 0.5f)))
-		{
-			printf("after transforming....\n");
-			std::cout << tensor << '\n';
-		}
+	case NN_TYPE_VGGA: config = ctxCmd.enable_batch_norm ? VGG_A_BATCHNORM : VGG_A; break;
+	case NN_TYPE_VGGA_LRN: config = ctxCmd.enable_batch_norm ? VGG_A_LRN_BATCHNORM : VGG_A_LRN; break;
+	case NN_TYPE_VGGB: config = ctxCmd.enable_batch_norm ? VGG_B_BATCHNORM : VGG_B; break;
+	case NN_TYPE_VGGC: config = ctxCmd.enable_batch_norm ? VGG_C_BATCHNORM : VGG_C; break;
+	case NN_TYPE_VGGD: config = ctxCmd.enable_batch_norm ? VGG_D_BATCHNORM : VGG_D; break;
+	case NN_TYPE_VGGE: config = ctxCmd.enable_batch_norm ? VGG_E_BATCHNORM : VGG_E; break;
 	}
 
-	imageprocessor.Uninit();
-#endif
+	VGGNet vgg_net(config, ctxCmd.num_classes);
 
 	tm_end = std::chrono::system_clock::now();
 	printf("It took %lld msec to construct the VGG16 network.\n", 
 		std::chrono::duration_cast<std::chrono::milliseconds>(tm_end - tm_start).count());
 	tm_start = std::chrono::system_clock::now();
 
-	if (_tcsicmp(argv[1], _T("state")) == 0)
+	switch (ctxCmd.cmd)
 	{
-		// print the VGG16 layout
-		std::cout << "VGG16 layout:\n" << vgg16_net << '\n';
-
-		// print the total numbers of parameters and weight layers
-		int64_t total_parameters = 0, weight_layers = 0;
-		auto netparams = vgg16_net.parameters();
-		for (size_t i = 0; i < netparams.size(); i++)
+	case NN_CMD_STATE:
 		{
-			int64_t param_item_count = netparams[i].sizes().size() > 0 ? 1 : 0;
-			for (size_t j = 0; j < netparams[i].sizes().size(); j++)
-				param_item_count *= netparams[i].size(j);
-			total_parameters += param_item_count;
+			vgg_net.Print();
 		}
+		break;
+	case NN_CMD_TRAIN:
+		{
+			if (ctxCmd.image_set_root_path.size() == 0 || ctxCmd.train_net_state_path.size() == 0)
+			{
+				PrintHelp();
+				goto done;
+			}
 
-		std::cout << "\nparameters layout:\n\ttotal parameters: " << total_parameters << ", weight layers: " << netparams.size() / 2 << '\n';
+			if (ctxCmd.clean_pretrain_net == false && vgg_net.loadnet(ctxCmd.train_net_state_path.c_str()) != 0)
+			{
+				_tprintf(_T("Failed to load the VGG network from %s, retraining the VGG net.\n"), argv[3]);
+			}
 
-		// print each parameter layout
-		for (auto const& p : vgg16_net.named_parameters())
-			std::cout << "\t" << p.key() << ":\n\t\t" << p.value().sizes() << '\n';
-	}
-	else if (_tcsicmp(argv[1], _T("train")) == 0)
-	{
-		if (argc <= 3)
+			vgg_net.train(ctxCmd.image_set_root_path.c_str(), 
+				ctxCmd.train_net_state_path.c_str(), 
+				ctxCmd.batchsize,
+				ctxCmd.epochnum,
+				ctxCmd.learningrate,
+				ctxCmd.showloss_per_num_of_batches,
+				ctxCmd.clean_pretrain_net);
+		}
+		break;
+	case NN_CMD_VERIFY:
+		{
+			if (ctxCmd.image_set_root_path.size() == 0 || ctxCmd.train_net_state_path.size() == 0)
+			{
+				PrintHelp();
+				goto done;
+			}
+
+			vgg_net.verify(ctxCmd.image_set_root_path.c_str(), ctxCmd.train_net_state_path.c_str());
+		}
+		break;
+	case NN_CMD_CLASSIFY:
+		{
+			if (ctxCmd.train_net_state_path.size() == 0 || ctxCmd.image_path.size() == 0)
+			{
+				PrintHelp();
+				goto done;
+			}
+
+			if (vgg_net.loadnet(ctxCmd.train_net_state_path.c_str()) != 0)
+			{
+				_tprintf(_T("Failed to load the VGG network from %s.\n"), argv[2]);
+				goto done;
+			}
+
+			vgg_net.classify(ctxCmd.image_path.c_str());
+		}
+		break;
+	case NN_CMD_TEST:
+		Test();
+		break;
+	default:
 		{
 			PrintHelp();
 			goto done;
 		}
-
-		if (vgg16_net.loadnet(argv[3]) != 0)
-		{
-			_tprintf(_T("Failed to load the VGG network from %s, retraining the VGG net.\n"), argv[3]);
-		}
-
-		vgg16_net.train(argv[2], argv[3]);
-	}
-	else if (_tcsicmp(argv[1], _T("verify")) == 0)
-	{
-		if (argc <= 3)
-		{
-			PrintHelp();
-			goto done;
-		}
-
-		vgg16_net.verify(argv[2], argv[3]);
-	}
-	else if (_tcsicmp(argv[1], _T("classify")) == 0)
-	{
-		if (argc <= 3)
-		{
-			PrintHelp();
-			goto done;
-		}
-
-		if (vgg16_net.loadnet(argv[2]) != 0)
-		{
-			_tprintf(_T("Failed to load the VGG network from %s.\n"), argv[2]);
-			goto done;
-		}
-
-		vgg16_net.classify(argv[3]);
-	}
-	else
-	{
-		PrintHelp();
-		goto done;
 	}
 
 done:

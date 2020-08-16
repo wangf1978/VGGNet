@@ -7,6 +7,7 @@
 #include <tchar.h>
 #include <random>
 #include <algorithm>
+#include "util.h"
 
 extern void FreeBlob(void* p);
 
@@ -14,105 +15,71 @@ extern void FreeBlob(void* p);
 #define VGG_INPUT_IMG_HEIGHT					224
 #define VGG_TRAIN_BATCH_SIZE					64
 
-VGGNet::VGGNet(int num_classes)
-	: C1  (register_module("C1",  Conv2d(Conv2dOptions(  3,  64, 3).padding(1))))
-	, C1B (register_module("C1B", BatchNorm2d(BatchNorm2dOptions(64))))
-	, C3  (register_module("C3",  Conv2d(Conv2dOptions( 64,  64, 3).padding(1))))
-	, C3B (register_module("C3B", BatchNorm2d(BatchNorm2dOptions(64))))
-	, C6  (register_module("C6",  Conv2d(Conv2dOptions( 64, 128, 3).padding(1))))
-	, C6B (register_module("C6B", BatchNorm2d(BatchNorm2dOptions(128))))
-	, C8  (register_module("C8",  Conv2d(Conv2dOptions(128, 128, 3).padding(1))))
-	, C8B (register_module("C8B", BatchNorm2d(BatchNorm2dOptions(128))))
-	, C11 (register_module("C11", Conv2d(Conv2dOptions(128, 256, 3).padding(1))))
-	, C11B(register_module("C11B",BatchNorm2d(BatchNorm2dOptions(256))))
-	, C13 (register_module("C13", Conv2d(Conv2dOptions(256, 256, 3).padding(1))))
-	, C13B(register_module("C13B",BatchNorm2d(BatchNorm2dOptions(256))))
-	, C15 (register_module("C15", Conv2d(Conv2dOptions(256, 256, 3).padding(1))))
-	, C15B(register_module("C15B",BatchNorm2d(BatchNorm2dOptions(256))))
-	, C18 (register_module("C18", Conv2d(Conv2dOptions(256, 512, 3).padding(1))))
-	, C18B(register_module("C18B",BatchNorm2d(BatchNorm2dOptions(512))))
-	, C20 (register_module("C20", Conv2d(Conv2dOptions(512, 512, 3).padding(1))))
-	, C20B(register_module("C20B",BatchNorm2d(BatchNorm2dOptions(512))))
-	, C22 (register_module("C22", Conv2d(Conv2dOptions(512, 512, 3).padding(1))))
-	, C22B(register_module("C22B",BatchNorm2d(BatchNorm2dOptions(512))))
-	, C25 (register_module("C25", Conv2d(Conv2dOptions(512, 512, 3).padding(1))))
-	, C25B(register_module("C25B",BatchNorm2d(BatchNorm2dOptions(512))))
-	, C27 (register_module("C27", Conv2d(Conv2dOptions(512, 512, 3).padding(1))))
-	, C27B(register_module("C27B",BatchNorm2d(BatchNorm2dOptions(512))))
-	, C29 (register_module("C29", Conv2d(Conv2dOptions(512, 512, 3).padding(1))))
-	, C29B(register_module("C29B",BatchNorm2d(BatchNorm2dOptions(512))))
-	, FC32(register_module("FC32",Linear(512 * 7 * 7, 4096)))
-	, FC35(register_module("FC35",Linear(4096, 4096)))
-	, FC38(register_module("FC38",Linear(4096, num_classes)))
+std::map<VGG_CONFIG, std::string> _VGG_CONFIG_NAMES =
 {
-	m_imageprocessor.Init(VGG_INPUT_IMG_WIDTH, VGG_INPUT_IMG_HEIGHT);
+	{VGG_A,					"VGGA_NoBatchNorm"},
+	{VGG_A_BATCHNORM,		"VGGA_BatchNorm"},
+	{VGG_A_LRN,				"VGGA_LRN_NoBatchNorm"},
+	{VGG_A_LRN_BATCHNORM,	"VGGA_LRN_BatchNorm"},
+	{VGG_B,					"VGGB_NoBatchNorm"},
+	{VGG_B_BATCHNORM,		"VGGB_BatchNorm"},
+	{VGG_C,					"VGGC_NoBatchNorm"},
+	{VGG_C_BATCHNORM,		"VGGC_BatchNorm"},
+	{VGG_D,					"VGGD_NoBatchNorm"},
+	{VGG_D_BATCHNORM,		"VGGD_BatchNorm"},
+	{VGG_E,					"VGGD_NoBatchNorm"},
+	{VGG_E_BATCHNORM,		"VGGD_BatchNorm"},
+};
+
+VGGNet::VGGNet(VGG_CONFIG config, int num_classes, bool use_32x32_input, int * ret)
+	: m_VGG_config(config)
+	, m_num_classes(num_classes)
+	, m_use_32x32_input(use_32x32_input)
+{
+	m_imageprocessor.Init(use_32x32_input ? 32 : VGG_INPUT_IMG_WIDTH, use_32x32_input ? 32 : VGG_INPUT_IMG_HEIGHT);
+
+	int iRet = -1;
+	auto iter = _VGG_CONFIG_NAMES.find(config);
+	if (iter != _VGG_CONFIG_NAMES.end())
+	{
+		SetOptions({ 
+			{"NN::final_out_classes", std::to_string(m_num_classes) },
+			{"NN::use_32x32_input", std::to_string(m_use_32x32_input?1:0) },
+			});
+		iRet = Init(iter->second.c_str());
+
+		if (iRet == 0 && use_32x32_input)
+		{
+			for (auto& m : modules(false))
+			{
+				if (m->name() == "module: torch::nn::LinearImpl")
+				{
+					std::shared_ptr<torch::nn::LinearImpl> spLinearImpl =
+						std::dynamic_pointer_cast<torch::nn::LinearImpl>(m);
+					spLinearImpl->options.in_features(512);
+					break;
+				}
+			}
+		}
+	}
+
+	if (ret != NULL)
+		*ret = iRet;
 }
 
 VGGNet::~VGGNet()
 {
 	m_imageprocessor.Uninit();
+	Uninit();
 }
 
-int64_t VGGNet::num_flat_features(torch::Tensor input)
-{
-	int64_t num_features = 1;
-	auto sizes = input.sizes();
-	for (auto s : sizes) {
-		num_features *= s;
-	}
-	return num_features;
-}
-
-torch::Tensor VGGNet::forward(torch::Tensor& x)
-{
-	namespace F = torch::nn::functional;
-
-	if (m_bEnableBatchNorm)
-	{
-		// block#1
-		x = F::max_pool2d(F::relu(C3B(C3(F::relu(C1B(C1(x)), F::ReLUFuncOptions(true)))), F::ReLUFuncOptions(true)), F::MaxPool2dFuncOptions(2));
-
-		// block#2
-		x = F::max_pool2d(F::relu(C8B(C8(F::relu(C6B(C6(x)), F::ReLUFuncOptions(true)))), F::ReLUFuncOptions(true)), F::MaxPool2dFuncOptions(2));
-
-		// block#3
-		x = F::max_pool2d(F::relu(C15B(C15(F::relu(C13B(C13(F::relu(C11B(C11(x)), F::ReLUFuncOptions(true)))), F::ReLUFuncOptions(true)))), F::ReLUFuncOptions(true)), F::MaxPool2dFuncOptions(2));
-
-		// block#4
-		x = F::max_pool2d(F::relu(C22B(C22(F::relu(C20B(C20(F::relu(C18B(C18(x)), F::ReLUFuncOptions(true)))), F::ReLUFuncOptions(true)))), F::ReLUFuncOptions(true)), F::MaxPool2dFuncOptions(2));
-
-		// block#5
-		x = F::max_pool2d(F::relu(C29B(C29(F::relu(C27B(C27(F::relu(C25B(C25(x)), F::ReLUFuncOptions(true)))), F::ReLUFuncOptions(true)))), F::ReLUFuncOptions(true)), F::MaxPool2dFuncOptions(2));
-	}
-	else
-	{
-		// block#1
-		x = F::max_pool2d(F::relu(C3(F::relu(C1(x)))), F::MaxPool2dFuncOptions(2));
-
-		// block#2
-		x = F::max_pool2d(F::relu(C8(F::relu(C6(x)))), F::MaxPool2dFuncOptions(2));
-
-		// block#3
-		x = F::max_pool2d(F::relu(C15(F::relu(C13(F::relu(C11(x)))))), F::MaxPool2dFuncOptions(2));
-
-		// block#4
-		x = F::max_pool2d(F::relu(C22(F::relu(C20(F::relu(C18(x)))))), F::MaxPool2dFuncOptions(2));
-
-		// block#5
-		x = F::max_pool2d(F::relu(C29(F::relu(C27(F::relu(C25(x)))))), F::MaxPool2dFuncOptions(2));
-	}
-
-	x = x.view({ x.size(0), -1 });
-
-	// classifier
-	x = F::dropout(F::relu(FC32(x), F::ReLUFuncOptions(true)), F::DropoutFuncOptions().p(0.5).inplace(true));
-	x = F::dropout(F::relu(FC35(x), F::ReLUFuncOptions(true)), F::DropoutFuncOptions().p(0.5).inplace(true));
-	x = FC38(x);
-
-	return x;
-}
-
-int VGGNet::train(const TCHAR* szImageSetRootPath, const TCHAR* szTrainSetStateFilePath)
+int VGGNet::train(const char* szImageSetRootPath, 
+	const char* szTrainSetStateFilePath,
+	int batch_size,
+	int num_epoch,
+	float learning_rate,
+	unsigned int showloss_per_num_of_batches,
+	bool clean_pretrain_net)
 {
 	TCHAR szImageFile[MAX_PATH] = {0};
 	// store the file name classname/picture_file_name
@@ -121,22 +88,42 @@ int VGGNet::train(const TCHAR* szImageSetRootPath, const TCHAR* szTrainSetStateF
 	std::vector<size_t> train_image_shuffle_set;
 	auto tm_start = std::chrono::system_clock::now();
 	auto tm_end = tm_start;
-
 	TCHAR szDirPath[MAX_PATH] = { 0 };
+	TCHAR* tszImageSetRootPath = NULL;
 
-	_tcscpy_s(szDirPath, MAX_PATH, szImageSetRootPath);
-	size_t ccDirPath = _tcslen(szImageSetRootPath);
+	// Convert UTF-8 to Unicode
+#ifdef _UNICODE
+	wchar_t wszImageSetRootPath[MAX_PATH + 1] = { 0 };
+	MultiByteToWideChar(CP_UTF8, 0, szImageSetRootPath, -1, wszImageSetRootPath, MAX_PATH + 1);
+	tszImageSetRootPath = wszImageSetRootPath;
+#else
+	tszImageSetRootPath = szImageSetRootPath;
+#endif
+
+	_tcscpy_s(szDirPath, MAX_PATH, tszImageSetRootPath);
+	size_t ccDirPath = _tcslen(tszImageSetRootPath);
 	if (szDirPath[ccDirPath - 1] == _T('\\'))
 		szDirPath[ccDirPath - 1] = _T('\0');
 
-	if (FAILED(loadImageSet(szImageSetRootPath, 
+	if (FAILED(loadImageSet(tszImageSetRootPath,
 		train_image_files, train_image_labels, true)))
 	{
 		printf("Failed to load the train image/label set.\n");
 		return -1;
 	}
 
-	double lr = 0.01;
+	// delete the previous pre-train net state
+	if (clean_pretrain_net)
+	{
+		if (DeleteFileA(szTrainSetStateFilePath) == FALSE)
+		{
+			printf("Failed to delete the file '%s' {err: %lu}.\n", szTrainSetStateFilePath, GetLastError());
+		}
+	}
+
+	batch_size = batch_size < 0 ? 1 : batch_size;
+
+	double lr = learning_rate > 0.f ? (double)learning_rate : 0.01;
 	auto criterion = torch::nn::CrossEntropyLoss();
 	//auto optimizer = torch::optim::SGD(parameters(), torch::optim::SGDOptions(0.001).momentum(0.9));
 	auto optimizer = torch::optim::SGD(parameters(), torch::optim::SGDOptions(lr).momentum(0.9));
@@ -146,10 +133,8 @@ int VGGNet::train(const TCHAR* szImageSetRootPath, const TCHAR* szTrainSetStateF
 
 	tm_start = std::chrono::system_clock::now();
 	
-	int64_t kNumberOfEpochs = 3;
-
 	torch::Tensor tensor_input;
-	for (int64_t epoch = 1; epoch <= kNumberOfEpochs; ++epoch)
+	for (int64_t epoch = 1; epoch <= (int64_t)num_epoch; ++epoch)
 	{
 		auto running_loss = 0.;
 		size_t totals = 0;
@@ -176,14 +161,14 @@ int VGGNet::train(const TCHAR* szImageSetRootPath, const TCHAR* szTrainSetStateF
 		}
 
 		// Take the image shuffle
-		for(size_t i = 0;i<(train_image_shuffle_set.size() + VGG_TRAIN_BATCH_SIZE -1)/ VGG_TRAIN_BATCH_SIZE;i++)
+		for(size_t i = 0;i<(train_image_shuffle_set.size() + batch_size -1)/ batch_size;i++)
 		{
 			std::vector<VGGNet::tstring> image_batches;
 			std::vector<long long> label_batches;
 
-			for (int b = 0; b < VGG_TRAIN_BATCH_SIZE; b++)
+			for (int b = 0; b < batch_size; b++)
 			{
-				size_t idx = i * VGG_TRAIN_BATCH_SIZE + b;
+				size_t idx = i * batch_size + b;
 				if (idx >= train_image_shuffle_set.size())
 					break;
 
@@ -239,16 +224,19 @@ int VGGNet::train(const TCHAR* szImageSetRootPath, const TCHAR* szTrainSetStateF
 			optimizer.step();
 
 			running_loss += loss.item().toFloat();
-			if ((i + 1) % 10 == 0)
+			if (showloss_per_num_of_batches > 0 && ((i + 1) % showloss_per_num_of_batches == 0))
 			{
-				printf("[%lld, %5zu] loss: %.3f\n", epoch, i + 1, running_loss / 10);
+				printf("[%lld, %5zu] loss: %.3f\n", epoch, i + 1, running_loss / showloss_per_num_of_batches);
 				running_loss = 0.;
 			}
 		}
 
-		lr = lr * 0.1;
-		if (lr < 0.00001)
-			lr = 0.00001;
+		if (epoch % 2 == 0)
+		{
+			lr = lr * 0.1;
+			if (lr < 0.00001)
+				lr = 0.00001;
+		}
 	}
 
 	printf("Finish training!\n");
@@ -263,7 +251,7 @@ int VGGNet::train(const TCHAR* szImageSetRootPath, const TCHAR* szTrainSetStateF
 	return 0;
 }
 
-void VGGNet::verify(const TCHAR* szImageSetRootPath, const TCHAR* szPreTrainSetStateFilePath)
+void VGGNet::verify(const char* szImageSetRootPath, const char* szPreTrainSetStateFilePath)
 {
 	TCHAR szImageFile[MAX_PATH] = { 0 };
 	// store the file name with the format 'classname/picture_file_name'
@@ -272,15 +260,24 @@ void VGGNet::verify(const TCHAR* szImageSetRootPath, const TCHAR* szPreTrainSetS
 	std::vector<size_t> test_image_shuffle_set;
 	auto tm_start = std::chrono::system_clock::now();
 	auto tm_end = tm_start;
-
 	TCHAR szDirPath[MAX_PATH] = { 0 };
+	TCHAR* tszImageSetRootPath = NULL;
 
-	_tcscpy_s(szDirPath, MAX_PATH, szImageSetRootPath);
-	size_t ccDirPath = _tcslen(szImageSetRootPath);
+	// Convert UTF-8 to Unicode
+#ifdef _UNICODE
+	wchar_t wszImageSetRootPath[MAX_PATH + 1] = { 0 };
+	MultiByteToWideChar(CP_UTF8, 0, szImageSetRootPath, -1, wszImageSetRootPath, MAX_PATH + 1);
+	tszImageSetRootPath = wszImageSetRootPath;
+#else
+	tszImageSetRootPath = szImageSetRootPath;
+#endif
+
+	_tcscpy_s(szDirPath, MAX_PATH, tszImageSetRootPath);
+	size_t ccDirPath = _tcslen(tszImageSetRootPath);
 	if (szDirPath[ccDirPath - 1] == _T('\\'))
 		szDirPath[ccDirPath - 1] = _T('\0');
 
-	if (FAILED(loadImageSet(szImageSetRootPath, 
+	if (FAILED(loadImageSet(tszImageSetRootPath,
 		test_image_files, test_image_labels, false)))
 	{
 		printf("Failed to load the test image/label sets.\n");
@@ -371,13 +368,22 @@ void VGGNet::verify(const TCHAR* szImageSetRootPath, const TCHAR* szPreTrainSetS
 		std::chrono::duration_cast<std::chrono::milliseconds>(tm_end - tm_start).count());
 }
 
-void VGGNet::classify(const TCHAR* cszImageFile)
+void VGGNet::classify(const char* cszImageFile)
 {
 	auto tm_start = std::chrono::system_clock::now();
 	auto tm_end = tm_start;
 	torch::Tensor tensor_input;
+	TCHAR *tcsImageFile;
 
-	if (m_imageprocessor.ToTensor(cszImageFile, tensor_input) != 0)
+#ifdef _UNICODE
+	wchar_t wszImageFilePath[MAX_PATH + 1] = { 0 };
+	MultiByteToWideChar(CP_UTF8, 0, cszImageFile, -1, wszImageFilePath, MAX_PATH + 1);
+	tcsImageFile = wszImageFilePath;
+#else
+	tcsImageFile = cszImageFile;
+#endif
+
+	if (m_imageprocessor.ToTensor(tcsImageFile, tensor_input) != 0)
 	{
 		printf("Failed to convert the image to tensor.\n");
 		return;
@@ -524,7 +530,7 @@ HRESULT VGGNet::loadLabels(const TCHAR* szImageSetRootPath, std::vector<tstring>
 	return S_OK;
 }
 
-int VGGNet::savenet(const TCHAR* szTrainSetStateFilePath)
+int VGGNet::savenet(const char* szTrainSetStateFilePath)
 {
 	// Save the net state to xxxx.pt and save the labels to xxxx.pt.label
 	std::string szLabelFilePath;
@@ -533,27 +539,15 @@ int VGGNet::savenet(const TCHAR* szTrainSetStateFilePath)
 		torch::serialize::OutputArchive archive;
 		save(archive);
 
-#ifdef _UNICODE
-		char szInputFile[MAX_PATH + 1] = { 0 };
-		if (WideCharToMultiByte(CP_UTF8, 0, szTrainSetStateFilePath, -1, szInputFile, MAX_PATH + 1, NULL, NULL) <= 0)
-		{
-			printf("Failed to convert the file name to UTF-8.\n");
-			return -1;
-		}
-		else
-			archive.save_to(szInputFile);
-		szLabelFilePath = szInputFile;
-#else
 		archive.save_to(szTrainSetStateFilePath);
-		szLabelFilePath = szInputFile;
-#endif
+		szLabelFilePath = szTrainSetStateFilePath;
 	}
 	catch (...)
 	{
 		printf("Failed to save the trained VGG net state.\n");
 		return -1;
 	}
-	_tprintf(_T("Save the training result to %s.\n"), szTrainSetStateFilePath);
+	printf("Save the training result to %s.\n", szTrainSetStateFilePath);
 
 	// write the labels
 	szLabelFilePath.append(".label");
@@ -582,27 +576,15 @@ int VGGNet::savenet(const TCHAR* szTrainSetStateFilePath)
 	return 0;
 }
 
-int VGGNet::loadnet(const TCHAR* szTrainSetStateFilePath)
+int VGGNet::loadnet(const char* szPreTrainSetStateFilePath)
 {
 	std::string szLabelFilePath;
 	try
 	{
 		torch::serialize::InputArchive archive;
 
-#ifdef _UNICODE
-		char szInputFile[MAX_PATH + 1] = { 0 };
-		if (WideCharToMultiByte(CP_UTF8, 0, szTrainSetStateFilePath, -1, szInputFile, MAX_PATH + 1, NULL, NULL) <= 0)
-		{
-			printf("Failed to convert the file name.\n");
-			return -1;
-		}
-		else
-			archive.load_from(szInputFile);
-		szLabelFilePath = szInputFile;
-#else
 		archive.load_from(szPreTrainSetStateFilePath);
 		szLabelFilePath = szPreTrainSetStateFilePath;
-#endif
 		load(archive);
 	}
 	catch (...)

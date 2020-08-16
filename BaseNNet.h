@@ -7,11 +7,14 @@
 
 using namespace torch::nn;
 
+using NNetOptions = torch::OrderedDict<std::string, std::string>;
+
 class BaseNNet: public Module
 {
 public:
-	int LoadNet(const char* szNNName);
-	int UnloadNet();
+	int SetOptions(NNetOptions options);
+	int Init(const char* szNNName);
+	int Uninit();
 
 	void Print();
 
@@ -26,5 +29,6 @@ private:
 	std::vector<tinyxml2::XMLElement*> forward_list;
 	tinyxml2::XMLDocument xmlDoc;
 	std::string nn_model_name;
+	NNetOptions nn_options;
 };
 

@@ -10,6 +10,7 @@
 #include <d2d1_2.h>
 #include <shlwapi.h>
 #include "ImageProcess.h"
+#include "BaseNNet.h"
 
 using namespace Microsoft::WRL;
 using namespace torch::nn;
@@ -19,23 +20,45 @@ using namespace std;
 
 #define MAX_LABEL_NAME		2048
 
-class VGGNet : public Module
+enum VGG_CONFIG
+{
+	VGG_A = 0,
+	VGG_A_BATCHNORM,
+	VGG_A_LRN,
+	VGG_A_LRN_BATCHNORM,
+	VGG_B,
+	VGG_B_BATCHNORM,
+	VGG_C,
+	VGG_C_BATCHNORM,
+	VGG_D,
+	VGG_D_BATCHNORM,
+	VGG_E,
+	VGG_E_BATCHNORM
+};
+
+class VGGNet : public BaseNNet
 {
 public:
 	using tstring = std::basic_string<TCHAR, std::char_traits<TCHAR>, std::allocator<TCHAR>>;
 
-	VGGNet(int num_classes);
+	VGGNet(VGG_CONFIG config, int num_classes, bool use_32x32_input = false, int * ret = NULL);
 	~VGGNet();
 
-	torch::Tensor	forward(torch::Tensor& input);
-	int				train(const TCHAR* szTrainSetRootPath, const TCHAR* szTrainSetStateFilePath);
-	void			verify(const TCHAR* szTrainSetRootPath, const TCHAR* szTrainSetStateFilePath);
-	int				savenet(const TCHAR* szTrainSetStateFilePath);
-	int				loadnet(const TCHAR* szTrainSetStateFilePath);
-	void			classify(const TCHAR* szImageFile);
+	int				train(
+						const char* szTrainSetRootPath, 
+						const char* szTrainSetStateFilePath,
+						int batch_size = 1, 
+						int num_epoch = 1,
+						float learning_rate = -1.0f,
+						unsigned int showloss_per_num_of_batches = 10,
+						bool clean_pretrain_net=false);
+	void			verify(const char* szTrainSetRootPath, const char* szTrainSetStateFilePath);
+	int				savenet(const char* szTrainSetStateFilePath);
+	int				loadnet(const char* szTrainSetStateFilePath);
+	int				loadnet();
+	void			classify(const char* szImageFile);
 
 public:
-	int64_t			num_flat_features(torch::Tensor input);
 	HRESULT			loadImageSet(const TCHAR* szImageSetRootPath,
 								 std::vector<tstring>& image_files,
 								 std::vector<tstring>& image_labels,
@@ -43,49 +66,13 @@ public:
 	HRESULT			loadLabels(const TCHAR* szImageSetRootPath, std::vector<tstring>& image_labels);
 
 protected:
-	// block 1
-	Conv2d			C1;
-	BatchNorm2d		C1B;
-	Conv2d			C3;
-	BatchNorm2d		C3B;
-
-	// block 2
-	Conv2d			C6;
-	BatchNorm2d		C6B;
-	Conv2d			C8;
-	BatchNorm2d		C8B;
-
-	// block 3
-	Conv2d			C11;
-	BatchNorm2d		C11B;
-	Conv2d			C13;
-	BatchNorm2d		C13B;
-	Conv2d			C15;
-	BatchNorm2d		C15B;
-
-	// block 4
-	Conv2d			C18;
-	BatchNorm2d		C18B;
-	Conv2d			C20;
-	BatchNorm2d		C20B;
-	Conv2d			C22;
-	BatchNorm2d		C22B;
-
-	// block 5
-	Conv2d			C25;
-	BatchNorm2d		C25B;
-	Conv2d			C27;
-	BatchNorm2d		C27B;
-	Conv2d			C29;
-	BatchNorm2d		C29B;
-
-	Linear			FC32;
-	Linear			FC35;
-	Linear			FC38;
-
 	std::vector<tstring>
 					m_image_labels;				// the image labels for this network
 	ImageProcess	m_imageprocessor;
 	bool			m_bEnableBatchNorm = true;
+	int				m_num_classes = 1000;
+	VGG_CONFIG		m_VGG_config;
+	int				m_batch_size = 1;
+	bool			m_use_32x32_input = false;
 };
 

@@ -20,21 +20,34 @@ std::vector<std::string> split(const std::string& s, char delimiter)
 const std::map<std::string, NN_CMD, CaseInsensitiveComparator> CmdLineParser::mapCmds =
 {
 	{"help",		NN_CMD_HELP},
+	{"state",		NN_CMD_STATE},
 	{"train",		NN_CMD_TRAIN},
 	{"verify",		NN_CMD_VERIFY},
 	{"classify",	NN_CMD_CLASSIFY},
 	{"test",		NN_CMD_TEST}
 };
 
+const std::map<std::string, NN_TYPE, CaseInsensitiveComparator> CmdLineParser::mapNNTypes =
+{
+	{"LENET",		NN_TYPE_LENET},
+	{"VGGA",		NN_TYPE_VGGA},
+	{"VGGA_LRN",	NN_TYPE_VGGA_LRN},
+	{"VGGB",		NN_TYPE_VGGB},
+	{"VGGC",		NN_TYPE_VGGC},
+	{"VGGD",		NN_TYPE_VGGD},
+	{"VGGE",		NN_TYPE_VGGE},
+};
+
 COMMAND_OPTION CmdLineParser::options[] = {
-	{"verbose",		"v",			ODT_INTEGER,		"1",		&CmdLineParser::m_cmdLineParser.verbose,				false,	false},
-	{"quiet",		"y",			ODT_BOOLEAN,		"true",		&CmdLineParser::m_cmdLineParser.silence,				false,	false},
+	{"verbose",			"v",		ODT_INTEGER,		"1",		&CmdLineParser::m_cmdLineParser.verbose,				false,	false},
+	{"quiet",			"y",		ODT_BOOLEAN,		"true",		&CmdLineParser::m_cmdLineParser.silence,				false,	false},
 };
 
 COMMAND_OPTION CmdLineParser::cmd_flags[] = {
+	{"type",			"t",		ODT_INTEGER,		"5",		&CmdLineParser::m_cmdLineParser.nn_type,				false,	false},
 	{"batchsize",		"b",		ODT_INTEGER,		"1",		&CmdLineParser::m_cmdLineParser.batchsize,				false,	false},
 	{"epochnum",		"e",		ODT_INTEGER,		"1",		&CmdLineParser::m_cmdLineParser.epochnum,				false,	false},
-	{"learingrate",		"l",		ODT_FLOAT,			NULL,		&CmdLineParser::m_cmdLineParser.learingrate,			false,	false},
+	{"learningrate",	"l",		ODT_FLOAT,			NULL,		&CmdLineParser::m_cmdLineParser.learningrate,			false,	false},
 	{"batchnorm",		NULL,		ODT_BOOLEAN,		"true",		&CmdLineParser::m_cmdLineParser.enable_batch_norm,		false,	true},
 	{"bn",				NULL,		ODT_BOOLEAN,		"true",		&CmdLineParser::m_cmdLineParser.enable_batch_norm,		false,	true},
 	{"numclass",		"n",		ODT_INTEGER,		NULL,		&CmdLineParser::m_cmdLineParser.num_classes,			false,	false},
@@ -314,7 +327,7 @@ void CmdLineParser::Print()
 	{
 		printf("batch size: %d\n", batchsize);
 		printf("train epoch rounds: %d\n", epochnum);
-		printf("learning rate: %f\n", learingrate);
+		printf("learning rate: %f\n", learningrate);
 		printf("enable batchnorm: %s\n", enable_batch_norm ? "yes" : "no");
 		printf("num of output class: %d\n", num_classes);
 		printf("the neutral network image input size: %s\n", use_32x32_input ? "32x32" : "224x224");

@@ -61,10 +61,12 @@
       <f view="flat" />
       <f module="FC32" />
       <f functional="relu" inplace="true" />
-      <f functional="dropout" inplace="true" p="0.5" />
+      <!-- drop-out can't set 'inplace' to true, otherwise, the backward will fail. -->
+      <f functional="dropout" inplace="false" p="0.5" />
       <f module="FC35" />
       <f functional="relu" inplace="true" />
-      <f functional="dropout" inplace="true" p="0.5" />
+      <!-- drop-out can't set 'inplace' to true, otherwise, the backward will fail. -->
+      <f functional="dropout" inplace="false" p="0.5" />
       <f module="FC38" />
     </forward>
   </nn>
@@ -154,10 +156,12 @@
       <f view="flat" />
       <f module="FC32" />
       <f functional="relu" inplace="true" />
-      <f functional="dropout" inplace="true" p="0.5" />
+      <!-- drop-out can't set 'inplace' to true, otherwise, the backward will fail. -->
+      <f functional="dropout" inplace="false" p="0.5" />
       <f module="FC35" />
       <f functional="relu" inplace="true" />
-      <f functional="dropout" inplace="true" p="0.5" />
+      <!-- drop-out can't set 'inplace' to true, otherwise, the backward will fail. -->
+      <f functional="dropout" inplace="false" p="0.5" />
       <f module="FC38" />
     </forward>
   </nn> 

@@ -31,7 +31,7 @@ https://blog.csdn.net/defi_wang/article/details/107889818
 *VGGNet state*
 
 ### **train**
-*VGGNet train image_set_root_path train_output [-b/--batchsize batchsize] [-e/--epochnum epochnum] [-l/--learningrate fixed_learingrate] [-bn/-batchnorm] [-n numclass] [-s/--smallimagesize] [--showloss once_num_batch] [--clean]*
+*VGGNet train image_set_root_path train_output [-b/--batchsize batchsize] [-e/--epochnum epochnum] [-l/--learningrate fixed_learningrate] [-bn/-batchnorm] [-n numclass] [-s/--smallimagesize] [--showloss once_num_batch] [--clean]*
 
 ### #*args*
 |name|shortname|arg|description|

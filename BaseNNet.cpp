@@ -2,11 +2,74 @@
 #include "util.h"
 #include <assert.h>
 #include <memory>
+#include <ostream>
+#include <Windows.h>
+#include "resource.h"
 
-int BaseNNet::LoadNet(const char* szNNName)
+// Load from Win32 resource file
+bool GetNNConfig(std::string& nnconfig_xml)
+{
+	FILE* fp = NULL;
+	bool bRet = false;
+	errno_t err = fopen_s(&fp, "nnconfig.xml", "rb");
+
+	if (err == 0 && fp != NULL)
+	{
+		fseek(fp, 0, SEEK_END);
+		long file_size = ftell(fp);
+		fseek(fp, 0, SEEK_SET);
+		if (file_size > 0)
+		{
+			char* pBuf = new char[file_size + 1];
+			memset(pBuf, 0, file_size + 1);
+			if (pBuf != NULL && fread(pBuf, 1, file_size, fp) == file_size)
+			{
+				nnconfig_xml.assign(pBuf, file_size);
+				fclose(fp);
+				return true;
+			}
+		}
+	}
+
+	if (fp != NULL)
+		fclose(fp);
+
+	HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(IDR_NNCONFIG), TEXT("XML"));
+	HGLOBAL hGlobalRes = LoadResource(NULL, hRes);
+	if (hGlobalRes == NULL)
+		return false;
+
+	LPVOID lp = LockResource(hGlobalRes);
+	DWORD size = SizeofResource(NULL, hRes);
+
+	if (size > 0)
+	{
+		nnconfig_xml.assign((char*)lp, size);
+		bRet = true;
+	}
+
+	FreeResource(hGlobalRes);
+	return bRet;
+}
+
+
+int BaseNNet::SetOptions(NNetOptions options)
+{
+	nn_options = options;
+	return 0;
+}
+
+int BaseNNet::Init(const char* szNNName)
 {
 	int iRet = 0;
-	if (xmlDoc.LoadFile("nnconfig.xml") != tinyxml2::XML_SUCCESS)
+	std::string strXmlNNConfig;
+	if (GetNNConfig(strXmlNNConfig) == false)
+	{
+		printf("Failed to load Neutral Network Configuration.\n");
+		return -1;
+	}
+
+	if (xmlDoc.Parse(strXmlNNConfig.c_str()) != tinyxml2::XML_SUCCESS)
 	{
 		printf("Failed to load 'nnconfig.xml'.\n");
 		return -1;
@@ -72,7 +135,7 @@ done:
 	return iRet;
 }
 
-int BaseNNet::UnloadNet()
+int BaseNNet::Uninit()
 {
 	for (auto& iter = nn_modules.begin(); iter != nn_modules.end(); iter++)
 	{
@@ -118,14 +181,37 @@ torch::Tensor BaseNNet::forward(torch::Tensor& input)
 
 	if (forward_list.size() == 0)
 	{
+		for (auto& m : modules(false))
+		{
+			if (m->name() == "torch::nn::Conv2dImpl")
+			{
+				auto spConv2d = std::dynamic_pointer_cast<torch::nn::Conv2dImpl>(m);
+				input = spConv2d->forward(input);
+				continue;
+			}
+			else if (m->name() == "torch::nn::BatchNorm2dImpl")
+			{
+				auto spBatchNorm2d = std::dynamic_pointer_cast<torch::nn::BatchNorm2dImpl>(m);
+				input = spBatchNorm2d->forward(input);
+				continue;
+			}
+			else if (m->name() == "torch::nn::LinearImpl")
+			{
+				if (input.sizes().size() != 2)
+					input = input.view({ input.size(0), -1 });
 
+				auto spLinear = std::dynamic_pointer_cast<torch::nn::LinearImpl>(m);
+				input = spLinear->forward(input);
+				continue;
+			}
+		}
 	}
 	else
 	{
 		for (auto& f : forward_list)
 		{
 			const char* szModuleName = f->Attribute("module");
-			if (f != NULL)
+			if (szModuleName != NULL)
 			{
 				auto m = nn_modules.find(szModuleName);
 				if (m != nn_modules.end())
@@ -149,7 +235,11 @@ torch::Tensor BaseNNet::forward(torch::Tensor& input)
 						input = spBatchNorm2d->forward(input);
 						continue;
 					}
+					else
+						printf("Unsupported module type: '%s'.\n", module_type.c_str());
 				}
+				else
+					printf("Failed to find the module '%s'.\n", szModuleName);
 			}
 
 			const char* szFunctional = f->Attribute("functional");
@@ -174,17 +264,21 @@ torch::Tensor BaseNNet::forward(torch::Tensor& input)
 					input = F::dropout(input, F::DropoutFuncOptions().p(p).inplace(inplace));
 					continue;
 				}
+				else
+					printf("Unsupported functional: '%s'\n", szFunctional);
 			}
 
 			const char* szView = f->Attribute("view");
 			if (szView != NULL)
 			{
-				if (XP_STRICMP(szView, "flat"))
+				if (XP_STRICMP(szView, "flat") == 0)
 				{
 					input = input.view({ input.size(0), -1 });
 					continue;
 				}
 			}
+			else
+				printf("Unsupported functional.\n");
 		}
 	}
 
@@ -230,9 +324,22 @@ int BaseNNet::LoadModule(tinyxml2::XMLElement* moduleElement)
 		int64_t in_features = moduleElement->Int64Attribute("in_features", -1LL); assert(in_features > 0);
 		int64_t out_features = moduleElement->Int64Attribute("out_features", -1LL); assert(out_features > 0);
 
+		if (moduleElement->Parent()->LastChildElement() == moduleElement)
+		{
+			auto num_of_classes = nn_options.find("NN::final_out_classes");
+			if (num_of_classes != nullptr)
+			{
+				if (ConvertToInt((char*)num_of_classes->c_str(), (char*)num_of_classes->c_str() + num_of_classes->length(), out_features))
+				{
+					printf("Change the neutral network output class number to %lld.\n", out_features);
+				}
+			}
+		}
+
 		std::shared_ptr<torch::nn::Module> spLinear =
 			std::make_shared<torch::nn::LinearImpl>(in_features, out_features);
 		nn_modules[szModuleName] = spLinear;
+		nn_module_types[szModuleName] = szModuleType;
 		register_module(szModuleName, spLinear);
 	}
 	else if (XP_STRICMP(szModuleType, "batchnorm2d") == 0)
@@ -242,6 +349,7 @@ int BaseNNet::LoadModule(tinyxml2::XMLElement* moduleElement)
 		std::shared_ptr<torch::nn::Module> spBatchNorm2D =
 			std::make_shared<torch::nn::BatchNorm2dImpl>(num_features);
 		nn_modules[szModuleName] = spBatchNorm2D;
+		nn_module_types[szModuleName] = szModuleType;
 		register_module(szModuleName, spBatchNorm2D);
 	}
 	else
