@@ -7,6 +7,11 @@ https://blog.csdn.net/defi_wang/article/details/107450428
 ## Code Introduce
 
 https://blog.csdn.net/defi_wang/article/details/107889818
+https://blog.csdn.net/defi_wang/article/details/108032208
+
+## Convert Image to Tensor
+
+https://blog.csdn.net/defi_wang/article/details/107936757
 
 ## How to run it?
 *VGGNet [options] command [arg...]*
@@ -39,7 +44,7 @@ https://blog.csdn.net/defi_wang/article/details/107889818
 |**batchsize**|**b**|batchsize|the batch size of sending to network|
 |**epochnum**|**e**|epochnum|the number of train epochs|
 |**learningrate**|**l**|learing rate|the fixed learning rate<br>(\*)if it is not specified, default learning rate is used, dynamic learning rate is used|
-|**batchnorm**<br>**bn**|n/a**|*n/a*|enable batchnorm after CNN |
+|**batchnorm**<br>**bn**|*n/a*|*n/a*|enable batchnorm after CNN |
 |**numclass**|**n**|num of classes|The specified final number of classes, the default value is 1000|
 |**smallsize**|**s**|*n/a*|Use 32x32 input instead of the original 224\*224|
 |**showloss**|*n/a*|once_num_batch|stat. the loss every num batch |
