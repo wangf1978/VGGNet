@@ -7,6 +7,7 @@
 #include <tchar.h>
 #include <random>
 #include <algorithm>
+#include <torch/util>
 #include "util.h"
 
 extern void FreeBlob(void* p);
@@ -242,8 +243,12 @@ int VGGNet::train(const char* szImageSetRootPath,
 	printf("Finish training!\n");
 
 	tm_end = std::chrono::system_clock::now();
-	printf("It took %lld msec to finish training VGG network!\n", 
-		std::chrono::duration_cast<std::chrono::milliseconds>(tm_end - tm_start).count());
+	long long train_duration = std::chrono::duration_cast<std::chrono::milliseconds>(tm_end - tm_start).count();
+	printf("It took %lldh:%02dm:%02d.%03ds to finish training VGG network!\n",
+		train_duration / 1000 / 3600,
+		(int)(train_duration / 1000 / 60 % 60),
+		(int)(train_duration / 1000 % 60),
+		(int)(train_duration % 1000));
 
 	m_image_labels = train_image_labels;
 	savenet(szTrainSetStateFilePath);
@@ -363,9 +368,13 @@ void VGGNet::verify(const char* szImageSetRootPath, const char* szPreTrainSetSta
 	}
 	tm_end = std::chrono::system_clock::now();
 
-	printf("Total test items: %d, passed test items: %d, pass rate: %.3f%%, cost %lld msec.\n",
+	long long verify_duration = std::chrono::duration_cast<std::chrono::milliseconds>(tm_end - tm_start).count();
+	printf("Total test items: %d, passed test items: %d, pass rate: %.3f%%, cost %lldh:%02dm:%02d.%03ds.\n",
 		total_test_items, passed_test_items, passed_test_items*100.f / total_test_items,
-		std::chrono::duration_cast<std::chrono::milliseconds>(tm_end - tm_start).count());
+		verify_duration / 1000 / 3600,
+		(int)(verify_duration / 1000 / 60 % 60),
+		(int)(verify_duration / 1000 % 60),
+		(int)(verify_duration % 1000));
 }
 
 void VGGNet::classify(const char* cszImageFile)

@@ -48,6 +48,7 @@ COMMAND_OPTION CmdLineParser::cmd_flags[] = {
 	{"batchsize",		"b",		ODT_INTEGER,		"1",		&CmdLineParser::m_cmdLineParser.batchsize,				false,	false},
 	{"epochnum",		"e",		ODT_INTEGER,		"1",		&CmdLineParser::m_cmdLineParser.epochnum,				false,	false},
 	{"learningrate",	"l",		ODT_FLOAT,			NULL,		&CmdLineParser::m_cmdLineParser.learningrate,			false,	false},
+	{"lr",				"l",		ODT_FLOAT,			NULL,		&CmdLineParser::m_cmdLineParser.learningrate,			false,	false},
 	{"batchnorm",		NULL,		ODT_BOOLEAN,		"true",		&CmdLineParser::m_cmdLineParser.enable_batch_norm,		false,	true},
 	{"bn",				NULL,		ODT_BOOLEAN,		"true",		&CmdLineParser::m_cmdLineParser.enable_batch_norm,		false,	true},
 	{"numclass",		"n",		ODT_INTEGER,		NULL,		&CmdLineParser::m_cmdLineParser.num_classes,			false,	false},

@@ -40,11 +40,18 @@ void PrintHelp()
 	printf("\t\t\tclassify:\tClassify the input image\n");
 
 	printf("\t\targs:\n");
-	
+	printf("\t\t\t--batchsize, -b\tThe batch size of training the network\n");
+	printf("\t\t\t--epochnum\tSpecify how many train epochs the network will be trained for\n");
+	printf("\t\t\t--lr, -l\tSpecify the learning rate\n");
+	printf("\t\t\t--batchnorm,\n\t\t\t--bn\t\tEnable batchnorm or not\n");
+	printf("\t\t\t--numclass\tSpecify the num of classes of output\n");
+	printf("\t\t\t--smallsize, -s\tUse 32x32 input image or not\n");
+	printf("\t\t\t--showloss, -s\tSpecify how many batches the loss rate is print once\n");
+	printf("\t\t\t--clean\t\tclean the previous train result\n");
 
 	printf("\t\texamples:\n");
 	printf("\t\t\tVGGNet state\n");
-	printf("\t\t\tVGGNet train I:\\CatDog I:\\catdog.pt\n");
+	printf("\t\t\tVGGNet train I:\\CatDog I:\\catdog.pt --bn -b 64 --showloss 10 --lr 0.001\n");
 	printf("\t\t\tVGGNet verify I:\\CatDog I:\\catdog.pt\n");
 	printf("\t\t\tVGGNet classify I:\\catdog.pt I:\\test.png\n");
 }
