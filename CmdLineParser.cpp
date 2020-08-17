@@ -275,6 +275,10 @@ bool CmdLineParser::ProcessCommandLineArgs(int argc, const char* argv[])
 			m_cmdLineParser.train_net_state_path = argv[unparsed_arg_indexes[0]];
 			m_cmdLineParser.image_path = argv[unparsed_arg_indexes[1]];
 		}
+		else if (m_cmdLineParser.cmd == NN_CMD_STATE)
+		{
+			m_cmdLineParser.train_net_state_path = argv[unparsed_arg_indexes[0]];
+		}
 		else if (m_cmdLineParser.cmd == NN_CMD_TEST)
 		{
 
