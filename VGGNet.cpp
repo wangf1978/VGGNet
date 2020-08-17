@@ -7,7 +7,6 @@
 #include <tchar.h>
 #include <random>
 #include <algorithm>
-#include <torch/util>
 #include "util.h"
 
 extern void FreeBlob(void* p);
