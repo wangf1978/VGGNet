@@ -1,7 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-
 <nns>
-  <nn name="VGGD_NoBatchNorm">
+  <nn name="VGGD_NoBatchNorm" cat="VGG">
     <modules>
       <!-- Block#1 -->
       <module name="C1"  type="conv2d" in_channels="3"   out_channels="64"  kernel_size="3" padding="1" />
@@ -70,7 +69,7 @@
       <f module="FC38" />
     </forward>
   </nn>
-  <nn name="VGGD_BatchNorm">
+  <nn name="VGGD_BatchNorm" cat="VGG">
     <modules>
       <!-- Block#1 -->
       <module name="C1"   type="conv2d" in_channels="3"   out_channels="64"  kernel_size="3" padding="1" />
