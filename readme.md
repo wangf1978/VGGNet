@@ -25,17 +25,17 @@ https://blog.csdn.net/defi_wang/article/details/107936757
 |verify | verify the pre-trained network with the test-set|
 |classify | classify an input picture with the pre-trained network |
 
-### *optoins*
+### *options*
 |option|description|
 |------|--------|
-|-v|Verbose mode to output more logs|
+|-v |Verbose mode to output more logs|
 |-y | Proceed the operation without any prompt |
 
 ## *arguments for command*
 ### **state**
 *VGGNet state [--bn/-batchnorm] [-n numclass] [-s/--smallsize] [train_output]*
 
-If no arg is specified, it will print the VGG-D net.
+If no arg is specified, it will print the VGG-D net at default.
 
 examples:
 ```
@@ -47,7 +47,7 @@ VGGNet.exe I:\catdog.pt
 ```
 print the information of neutral network loading from I:\catdog.pt.
 
-### #*args*
+#### *args*
 |name|shortname|arg|description|
 |----|---------|---|-----------|
 |**batchnorm**<br>**bn**|*n/a*|*n/a*|enable batchnorm after CNN |
@@ -58,12 +58,12 @@ print the information of neutral network loading from I:\catdog.pt.
 ### **train**
 *VGGNet train image_set_root_path train_output [-b/--batchsize batchsize] [-e/--epochnum epochnum] [-l/--learningrate fixed_learningrate] [--bn/--batchnorm] [-n numclass] [-s/--smallsize] [--showloss once_num_batch] [--clean]*
 
-### #*args*
+#### *args*
 |name|shortname|arg|description|
 |----|---------|---|-----------|
 |**batchsize**|**b**|batchsize|the batch size of sending to network|
 |**epochnum**|**e**|epochnum|the number of train epochs|
-|**learningrate**|**l**|learing rate|the fixed learning rate<br>(\*)if it is not specified, default learning rate is used, dynamic learning rate is used|
+|**learningrate**|**l**|learning rate|the fixed learning rate<br>(\*)if it is not specified, default learning rate is used, dynamic learning rate is used|
 |**batchnorm**<br>**bn**|*n/a*|*n/a*|enable batchnorm after CNN |
 |**numclass**|**n**|num of classes|The specified final number of classes, the default value is 1000|
 |**smallsize**|**s**|*n/a*|Use 32x32 input instead of the original 224\*224|
@@ -88,7 +88,7 @@ Examples
 ```
 VGGNet.exe train I:\CatDog I:\catdog.pt --bn -b 64 -l 0.0001 --showloss 10
 ```
-Train the image set lies at I:\CatDog, and save the output to I:\catdog.pt, the batchnorm layers will be introduced, and the batch size is 64, the learing rate use the fixed 0.0001, and show the loss rate every 10 batches.
+Train the image set lies at I:\CatDog, and save the output to I:\catdog.pt, the batchnorm layers will be introduced, and the batch size is 64, the learning rate use the fixed 0.0001, and show the loss rate every 10 batches.
 ### **verify**
 *VGGNet verify image_set_root_path pretrain_network*
 Verify the test-set and show the pass-rate and other information

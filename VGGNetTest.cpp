@@ -234,9 +234,9 @@ int _tmain(int argc, const TCHAR* argv[])
 					std::chrono::duration_cast<std::chrono::milliseconds>(tm_end - tm_start).count();
 				printf("It took %lldh:%02dm:%02d.%03ds msec to construct the '%s' network.\n",
 					load_duration / 1000 / 3600,
-					load_duration / 1000 / 60 % 60,
-					load_duration / 1000 % 60,
-					load_duration % 1000,
+					(int)(load_duration / 1000 / 60 % 60),
+					(int)(load_duration / 1000 % 60),
+					(int)(load_duration % 1000),
 					iter_config != _VGG_CONFIG_NAMES.end() ? iter_config->second.c_str() : "Unknown");
 				tm_start = std::chrono::system_clock::now();
 			}
@@ -270,7 +270,7 @@ int _tmain(int argc, const TCHAR* argv[])
 
 			if (vgg_net.loadnet(ctxCmd.train_net_state_path.c_str()) != 0)
 			{
-				_tprintf(_T("Failed to load the VGG network from %s.\n"), ctxCmd.train_net_state_path.c_str());
+				printf("Failed to load the VGG network from %s.\n", ctxCmd.train_net_state_path.c_str());
 				goto done;
 			}
 
