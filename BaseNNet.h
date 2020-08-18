@@ -16,9 +16,9 @@ public:
 	int Init(const char* szNNName);
 	int Uninit();
 
-	void Print();
+	virtual void Print();
 
-	torch::Tensor forward(torch::Tensor& input);
+	virtual torch::Tensor forward(torch::Tensor& input);
 
 protected:
 	int LoadModule(tinyxml2::XMLElement* moduleElement);
@@ -30,5 +30,6 @@ private:
 	tinyxml2::XMLDocument xmlDoc;
 	std::string nn_model_name;
 	NNetOptions nn_options;
+	std::string nn_cat;
 };
 

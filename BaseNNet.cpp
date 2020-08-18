@@ -95,6 +95,10 @@ int BaseNNet::Init(const char* szNNName)
 		return -1;
 	}
 
+	auto nnCategary = child->Attribute("cat");
+	if (nnCategary != NULL)
+		nn_cat = nnCategary;
+
 	// Load the modules one by one
 	auto Elementmodules = child->FirstChildElement("modules");
 	if (Elementmodules == NULL || Elementmodules->NoChildren())
@@ -332,6 +336,34 @@ int BaseNNet::LoadModule(tinyxml2::XMLElement* moduleElement)
 				if (ConvertToInt((char*)num_of_classes->c_str(), (char*)num_of_classes->c_str() + num_of_classes->length(), out_features))
 				{
 					printf("Change the neutral network output class number to %lld.\n", out_features);
+				}
+			}
+		}
+
+		if (nn_cat == "VGG")
+		{
+			// check whether it is the first full connect layer
+			bool bHaveExistedFCLayer = false;
+			for (auto& t : nn_module_types) {
+				if (t.second == "linear")
+				{
+					bHaveExistedFCLayer = true;
+					break;
+				}
+			}
+
+			if (!bHaveExistedFCLayer)
+			{
+				auto use_32x32_input = nn_options.find("NN::use_32x32_input");
+				if (use_32x32_input != nullptr)
+				{
+					int64_t b_use_32x32_input = 0;
+					if (ConvertToInt((char*)use_32x32_input->c_str(), (char*)use_32x32_input->c_str() + use_32x32_input->length(), b_use_32x32_input))
+					{
+						printf("Change the neutral network to use small image size: %s.\n", b_use_32x32_input?"yes":"no");
+						if (in_features == 512 * 7 * 7 && b_use_32x32_input)
+							in_features = 512;
+					}
 				}
 			}
 		}
