@@ -22,6 +22,7 @@ using namespace std;
 
 enum VGG_CONFIG
 {
+	VGG_UNKNOWN = -1,
 	VGG_A = 0,
 	VGG_A_BATCHNORM,
 	VGG_A_LRN,
@@ -36,12 +37,20 @@ enum VGG_CONFIG
 	VGG_E_BATCHNORM
 };
 
+#define IS_BATCHNORM_ENABLED(c)	(\
+	((c) == VGG_A_BATCHNORM ||\
+	 (c) == VGG_A_LRN_BATCHNORM ||\
+	 (c) == VGG_B_BATCHNORM ||\
+	 (c) == VGG_C_BATCHNORM ||\
+	 (c) == VGG_D_BATCHNORM ||\
+	 (c) == VGG_E_BATCHNORM)?true:false)
+
 class VGGNet : public BaseNNet
 {
 public:
 	using tstring = std::basic_string<TCHAR, std::char_traits<TCHAR>, std::allocator<TCHAR>>;
 
-	VGGNet(VGG_CONFIG config, int num_classes, bool use_32x32_input = false, int * ret = NULL);
+	VGGNet();
 	~VGGNet();
 
 	int				train(
@@ -50,20 +59,32 @@ public:
 						int batch_size = 1, 
 						int num_epoch = 1,
 						float learning_rate = -1.0f,
-						unsigned int showloss_per_num_of_batches = 10,
-						bool clean_pretrain_net=false);
+						unsigned int showloss_per_num_of_batches = 10);
 	void			verify(const char* szTrainSetRootPath, const char* szTrainSetStateFilePath);
-	int				savenet(const char* szTrainSetStateFilePath);
-	int				loadnet(const char* szTrainSetStateFilePath);
-	int				loadnet();
 	void			classify(const char* szImageFile);
 
-public:
+	// Load and save net
+	int				savenet(const char* szTrainSetStateFilePath);
+	int				loadnet(const char* szTrainSetStateFilePath);
+	int				loadnet(VGG_CONFIG config, int num_classes, bool use_32x32_input = false);
+	int				unloadnet();
+
+	// load image sets and labels
 	HRESULT			loadImageSet(const TCHAR* szImageSetRootPath,
 								 std::vector<tstring>& image_files,
 								 std::vector<tstring>& image_labels,
 								 bool bTrainSet = true, bool bShuffle = true);
 	HRESULT			loadLabels(const TCHAR* szImageSetRootPath, std::vector<tstring>& image_labels);
+
+	void			Print();
+
+	// get the property
+	VGG_CONFIG		getcurrconfig() { return m_VGG_config; }
+	int				getnumclasses() { return m_num_classes; }
+	bool			isuse32x32input() { return m_use_32x32_input; }
+
+protected:
+	int				_Init();
 
 protected:
 	std::vector<tstring>
@@ -74,5 +95,6 @@ protected:
 	VGG_CONFIG		m_VGG_config;
 	int				m_batch_size = 1;
 	bool			m_use_32x32_input = false;
+	bool			m_bInit = false;
 };
 

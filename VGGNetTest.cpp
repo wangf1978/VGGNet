@@ -5,6 +5,7 @@
 #include <iostream>
 #include <tuple>
 #include <chrono>
+#include <io.h>
 
 #define NOMINMAX
 
@@ -20,6 +21,8 @@
 #include "ImageProcess.h"
 #include "CmdLineParser.h"
 #include "BaseNNet.h"
+
+extern std::map<VGG_CONFIG, std::string> _VGG_CONFIG_NAMES;
 
 void FreeBlob(void* p)
 {
@@ -148,8 +151,7 @@ int _tmain(int argc, const TCHAR* argv[])
 	}
 
 	CmdLineParser& ctxCmd = CmdLineParser::GetCmdLineParser();
-
-	VGG_CONFIG config = ctxCmd.enable_batch_norm? VGG_D_BATCHNORM: VGG_D;
+	VGG_CONFIG config = ctxCmd.enable_batch_norm ? VGG_D_BATCHNORM : VGG_D;
 	switch (ctxCmd.nn_type)
 	{
 	case NN_TYPE_VGGA: config = ctxCmd.enable_batch_norm ? VGG_A_BATCHNORM : VGG_A; break;
@@ -160,31 +162,83 @@ int _tmain(int argc, const TCHAR* argv[])
 	case NN_TYPE_VGGE: config = ctxCmd.enable_batch_norm ? VGG_E_BATCHNORM : VGG_E; break;
 	}
 
-	VGGNet vgg_net(config, ctxCmd.num_classes);
-
-	tm_end = std::chrono::system_clock::now();
-	printf("It took %lld msec to construct the VGG16 network.\n", 
-		std::chrono::duration_cast<std::chrono::milliseconds>(tm_end - tm_start).count());
-	tm_start = std::chrono::system_clock::now();
-
+	VGGNet vgg_net;
 	switch (ctxCmd.cmd)
 	{
 	case NN_CMD_STATE:
 		{
-			vgg_net.Print();
+			if (_access(ctxCmd.train_net_state_path.c_str(), 0) == 0 && vgg_net.loadnet(ctxCmd.train_net_state_path.c_str()) == 0)
+				vgg_net.Print();
+			else if (vgg_net.loadnet(config, ctxCmd.num_classes, ctxCmd.use_32x32_input) == 0)
+				vgg_net.Print();
 		}
 		break;
 	case NN_CMD_TRAIN:
 		{
+			bool bLoadSucc = false;
 			if (ctxCmd.image_set_root_path.size() == 0 || ctxCmd.train_net_state_path.size() == 0)
 			{
 				PrintHelp();
 				goto done;
 			}
 
-			if (ctxCmd.clean_pretrain_net == false && vgg_net.loadnet(ctxCmd.train_net_state_path.c_str()) != 0)
+			// delete the previous pre-train net state
+			if (ctxCmd.clean_pretrain_net)
 			{
-				_tprintf(_T("Failed to load the VGG network from %s, retraining the VGG net.\n"), argv[3]);
+				if (DeleteFileA(ctxCmd.train_net_state_path.c_str()) == FALSE)
+				{
+					printf("Failed to delete the file '%s' {err: %lu}.\n", ctxCmd.train_net_state_path.c_str(), GetLastError());
+				}
+			}
+
+			// Try to load the net from the pre-trained file if it exist
+			if (_access(ctxCmd.train_net_state_path.c_str(), 0) == 0)
+			{
+				if (vgg_net.loadnet(ctxCmd.train_net_state_path.c_str()) != 0)
+					printf("Failed to load the VGG network from %s, retraining the VGG net.\n", ctxCmd.train_net_state_path.c_str());
+				else
+				{
+					// Check the previous neutral network config is the same with current specified parameters
+					if (config != vgg_net.getcurrconfig() ||
+						ctxCmd.num_classes != vgg_net.getnumclasses() ||
+						ctxCmd.use_32x32_input != vgg_net.isuse32x32input())
+					{
+						printf("The pre-trained network config is different with the specified parameters:\n");
+						auto iter1 = _VGG_CONFIG_NAMES.find(vgg_net.getcurrconfig());
+						auto iter2 = _VGG_CONFIG_NAMES.find(config);
+						printf("\tcurrent config: %s, the specified config: %s\n",
+							iter1 != _VGG_CONFIG_NAMES.end() ? iter1->second.c_str() : "Unknown",
+							iter2 != _VGG_CONFIG_NAMES.end() ? iter2->second.c_str() : "Unknown");
+						printf("\tcurrent numclass: %d, the specified numclass: %d\n", vgg_net.getnumclasses(), ctxCmd.num_classes);
+						printf("\tcurrent use_32x32_input: %s, the specified use_32x32_input: %s\n", 
+							vgg_net.isuse32x32input()?"yes":"no", ctxCmd.use_32x32_input?"yes":"no");
+						printf("Continue using the network config in the pre-train net state...\n");
+					}
+
+					bLoadSucc = true;
+				}
+			}
+
+			// Failed to load net from the previous trained net, retrain the net
+			if (bLoadSucc == false && vgg_net.loadnet(config, ctxCmd.num_classes, ctxCmd.use_32x32_input) != 0)
+			{
+				printf("Failed to load the neutral network.\n");
+				goto done;
+			}
+
+			tm_end = std::chrono::system_clock::now();
+
+			{
+				auto iter_config = _VGG_CONFIG_NAMES.find(vgg_net.getcurrconfig());
+				long long load_duration =
+					std::chrono::duration_cast<std::chrono::milliseconds>(tm_end - tm_start).count();
+				printf("It took %lldh:%02dm:%02d.%03ds msec to construct the '%s' network.\n",
+					load_duration / 1000 / 3600,
+					load_duration / 1000 / 60 % 60,
+					load_duration / 1000 % 60,
+					load_duration % 1000,
+					iter_config != _VGG_CONFIG_NAMES.end() ? iter_config->second.c_str() : "Unknown");
+				tm_start = std::chrono::system_clock::now();
 			}
 
 			vgg_net.train(ctxCmd.image_set_root_path.c_str(), 
@@ -192,8 +246,7 @@ int _tmain(int argc, const TCHAR* argv[])
 				ctxCmd.batchsize,
 				ctxCmd.epochnum,
 				ctxCmd.learningrate,
-				ctxCmd.showloss_per_num_of_batches,
-				ctxCmd.clean_pretrain_net);
+				ctxCmd.showloss_per_num_of_batches);
 		}
 		break;
 	case NN_CMD_VERIFY:
@@ -217,7 +270,7 @@ int _tmain(int argc, const TCHAR* argv[])
 
 			if (vgg_net.loadnet(ctxCmd.train_net_state_path.c_str()) != 0)
 			{
-				_tprintf(_T("Failed to load the VGG network from %s.\n"), argv[2]);
+				_tprintf(_T("Failed to load the VGG network from %s.\n"), ctxCmd.train_net_state_path.c_str());
 				goto done;
 			}
 

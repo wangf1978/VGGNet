@@ -31,40 +31,10 @@ std::map<VGG_CONFIG, std::string> _VGG_CONFIG_NAMES =
 	{VGG_E_BATCHNORM,		"VGGD_BatchNorm"},
 };
 
-VGGNet::VGGNet(VGG_CONFIG config, int num_classes, bool use_32x32_input, int * ret)
-	: m_VGG_config(config)
-	, m_num_classes(num_classes)
-	, m_use_32x32_input(use_32x32_input)
-{
-	m_imageprocessor.Init(use_32x32_input ? 32 : VGG_INPUT_IMG_WIDTH, use_32x32_input ? 32 : VGG_INPUT_IMG_HEIGHT);
-
-	int iRet = -1;
-	auto iter = _VGG_CONFIG_NAMES.find(config);
-	if (iter != _VGG_CONFIG_NAMES.end())
-	{
-		SetOptions({ 
-			{"NN::final_out_classes", std::to_string(m_num_classes) },
-			{"NN::use_32x32_input", std::to_string(m_use_32x32_input?1:0) },
-			});
-		iRet = Init(iter->second.c_str());
-
-		if (iRet == 0 && use_32x32_input)
-		{
-			for (auto& m : modules(false))
-			{
-				if (m->name() == "module: torch::nn::LinearImpl")
-				{
-					std::shared_ptr<torch::nn::LinearImpl> spLinearImpl =
-						std::dynamic_pointer_cast<torch::nn::LinearImpl>(m);
-					spLinearImpl->options.in_features(512);
-					break;
-				}
-			}
-		}
-	}
-
-	if (ret != NULL)
-		*ret = iRet;
+VGGNet::VGGNet()
+	: m_VGG_config(VGG_UNKNOWN)
+	, m_num_classes(-1)
+	, m_use_32x32_input(false) {
 }
 
 VGGNet::~VGGNet()
@@ -73,13 +43,67 @@ VGGNet::~VGGNet()
 	Uninit();
 }
 
+int VGGNet::loadnet(VGG_CONFIG config, int num_classes, bool use_32x32_input)
+{
+	m_VGG_config = config;
+	m_num_classes = num_classes;
+	m_use_32x32_input = use_32x32_input;
+	m_bEnableBatchNorm = IS_BATCHNORM_ENABLED(m_VGG_config);
+
+	m_imageprocessor.Init(m_use_32x32_input ? 32 : VGG_INPUT_IMG_WIDTH, m_use_32x32_input ? 32 : VGG_INPUT_IMG_HEIGHT);
+
+	return _Init();
+}
+
+int VGGNet::_Init()
+{
+	int iRet = -1;
+
+	if (m_bInit)
+	{
+		printf("The current neutral network is already initialized.\n");
+		return 0;
+	}
+
+	if (m_VGG_config == VGG_UNKNOWN)
+	{
+		printf("Don't know the current net configuration.\n");
+		return -1;
+	}
+
+	auto iter = _VGG_CONFIG_NAMES.find(m_VGG_config);
+	if (iter != _VGG_CONFIG_NAMES.end())
+	{
+		SetOptions({
+			{"NN::final_out_classes", std::to_string(m_num_classes) },
+			{"NN::use_32x32_input", std::to_string(m_use_32x32_input ? 1 : 0) },
+			});
+		iRet = Init(iter->second.c_str());
+	}
+
+	if (iRet >= 0)
+		m_bInit = true;
+
+	return iRet;
+}
+
+int VGGNet::unloadnet()
+{
+	m_VGG_config = VGG_UNKNOWN;
+	m_num_classes = -1;
+	m_use_32x32_input = false;
+
+	m_imageprocessor.Uninit();
+
+	return Uninit();
+}
+
 int VGGNet::train(const char* szImageSetRootPath, 
 	const char* szTrainSetStateFilePath,
 	int batch_size,
 	int num_epoch,
 	float learning_rate,
-	unsigned int showloss_per_num_of_batches,
-	bool clean_pretrain_net)
+	unsigned int showloss_per_num_of_batches)
 {
 	TCHAR szImageFile[MAX_PATH] = {0};
 	// store the file name classname/picture_file_name
@@ -90,6 +114,9 @@ int VGGNet::train(const char* szImageSetRootPath,
 	auto tm_end = tm_start;
 	TCHAR szDirPath[MAX_PATH] = { 0 };
 	TCHAR* tszImageSetRootPath = NULL;
+
+	if (_Init() != 0)
+		return -1;
 
 	// Convert UTF-8 to Unicode
 #ifdef _UNICODE
@@ -110,15 +137,6 @@ int VGGNet::train(const char* szImageSetRootPath,
 	{
 		printf("Failed to load the train image/label set.\n");
 		return -1;
-	}
-
-	// delete the previous pre-train net state
-	if (clean_pretrain_net)
-	{
-		if (DeleteFileA(szTrainSetStateFilePath) == FALSE)
-		{
-			printf("Failed to delete the file '%s' {err: %lu}.\n", szTrainSetStateFilePath, GetLastError());
-		}
 	}
 
 	batch_size = batch_size < 0 ? 1 : batch_size;
@@ -151,12 +169,16 @@ int VGGNet::train(const char* szImageSetRootPath,
 			std::shuffle(train_image_shuffle_set.begin(), train_image_shuffle_set.end(), g);
 		}
 
-		for (auto& pg : optimizer.param_groups())
+		// dynamic learning rate if no learning rate is specified
+		if (learning_rate <= 0.f)
 		{
-			if (pg.has_options())
+			for (auto& pg : optimizer.param_groups())
 			{
-				auto& options = static_cast<torch::optim::SGDOptions&>(pg.options());
-				options.lr() = lr;
+				if (pg.has_options())
+				{
+					auto& options = static_cast<torch::optim::SGDOptions&>(pg.options());
+					options.lr() = lr;
+				}
 			}
 		}
 
@@ -231,11 +253,15 @@ int VGGNet::train(const char* szImageSetRootPath,
 			}
 		}
 
-		if (epoch % 2 == 0)
+		// Adjust the learning rate dynamically
+		if (learning_rate <= 0.f)
 		{
-			lr = lr * 0.1;
-			if (lr < 0.00001)
-				lr = 0.00001;
+			if (epoch % 2 == 0)
+			{
+				lr = lr * 0.1;
+				if (lr < 0.00001)
+					lr = 0.00001;
+			}
 		}
 	}
 
@@ -307,7 +333,7 @@ void VGGNet::verify(const char* szImageSetRootPath, const char* szPreTrainSetSta
 
 	if (loadnet(szPreTrainSetStateFilePath) != 0)
 	{
-		printf("Failed to load the pre-trained VGG network.\n");
+		printf("Failed to load the pre-trained VGG network from %s.\n", szPreTrainSetStateFilePath);
 		return;
 	}
 
@@ -346,6 +372,9 @@ void VGGNet::verify(const char* szImageSetRootPath, const char* szPreTrainSetSta
 
 		// Label在这里必须是一阶向量，里面元素必须是整数类型
 		torch::Tensor tensor_label = torch::tensor({ (int64_t)label });
+
+		//std::cout << "tensor_input.sizes:" << tensor_input.sizes() << '\n';
+		//std::cout << "tensor_label.sizes:" << tensor_label.sizes() << '\n';
 
 		auto outputs = forward(tensor_input);
 		auto predicted = torch::max(outputs, 1);
@@ -399,6 +428,9 @@ void VGGNet::classify(const char* cszImageFile)
 
 	auto outputs = forward(tensor_input);
 	auto predicted = torch::max(outputs, 1);
+
+	//std::cout << std::get<0>(predicted) << '\n';
+	//std::cout << std::get<1>(predicted) << '\n';
 
 	tm_end = std::chrono::system_clock::now();
 
@@ -541,28 +573,13 @@ HRESULT VGGNet::loadLabels(const TCHAR* szImageSetRootPath, std::vector<tstring>
 int VGGNet::savenet(const char* szTrainSetStateFilePath)
 {
 	// Save the net state to xxxx.pt and save the labels to xxxx.pt.label
-	std::string szLabelFilePath;
+	char szLabel[MAX_LABEL_NAME] = { 0 };
+
 	try
 	{
 		torch::serialize::OutputArchive archive;
-		save(archive);
 
-		archive.save_to(szTrainSetStateFilePath);
-		szLabelFilePath = szTrainSetStateFilePath;
-	}
-	catch (...)
-	{
-		printf("Failed to save the trained VGG net state.\n");
-		return -1;
-	}
-	printf("Save the training result to %s.\n", szTrainSetStateFilePath);
-
-	// write the labels
-	szLabelFilePath.append(".label");
-	char szLabel[MAX_LABEL_NAME] = { 0 };
-	try
-	{
-		torch::serialize::OutputArchive label_archive;
+		// Add nested archive here
 		c10::List<std::string> label_list;
 		for (size_t i = 0; i < m_image_labels.size(); i++)
 		{
@@ -571,47 +588,45 @@ int VGGNet::savenet(const char* szTrainSetStateFilePath)
 			label_list.emplace_back((const char*)szLabel);
 		}
 		torch::IValue value(label_list);
-		label_archive.write("labels", label_list);
-		label_archive.save_to(szLabelFilePath);
+		archive.write("VGG_labels", label_list);
+
+		// also save the current network configuration
+		torch::IValue valNumClass(m_num_classes);
+		archive.write("VGG_num_of_class", valNumClass);
+
+		torch::IValue valNetConfig((int64_t)m_VGG_config);
+		archive.write("VGG_config", valNetConfig);
+
+		torch::IValue valUseSmallSize(m_use_32x32_input);
+		archive.write("VGG_use_32x32_input", valUseSmallSize);
+
+		//archive.write("VGG_private_properties", label_archive);
+
+		save(archive);
+
+		archive.save_to(szTrainSetStateFilePath);
 	}
 	catch (...)
 	{
-		printf("Failed to save the label names.\n");
+		printf("Failed to save the trained VGG net state.\n");
 		return -1;
 	}
+	printf("Save the training result to %s.\n", szTrainSetStateFilePath);
 
-	printf("Save the supported labels to be classified to %s.\n", szLabelFilePath.c_str());
 	return 0;
 }
 
 int VGGNet::loadnet(const char* szPreTrainSetStateFilePath)
 {
-	std::string szLabelFilePath;
+	wchar_t szLabel[MAX_LABEL_NAME] = { 0 };
 	try
 	{
 		torch::serialize::InputArchive archive;
 
 		archive.load_from(szPreTrainSetStateFilePath);
-		szLabelFilePath = szPreTrainSetStateFilePath;
-		load(archive);
-	}
-	catch (...)
-	{
-		printf("Failed to load the pre-trained VGG net state.\n");
-		return -1;
-	}
 
-	// load the label files for this pre-trained network;
-	wchar_t szLabel[MAX_LABEL_NAME] = { 0 };
-	szLabelFilePath.append(".label");
-	m_image_labels.clear();
-	try
-	{
 		torch::IValue value;
-		torch::serialize::InputArchive label_archive;
-		label_archive.load_from(szLabelFilePath.c_str());
-
-		if (label_archive.try_read("labels", value) && value.isList())
+		if (archive.try_read("VGG_labels", value) && value.isList())
 		{
 			auto& label_list = value.toListRef();
 			for (size_t i = 0; i < label_list.size(); i++)
@@ -626,14 +641,45 @@ int VGGNet::loadnet(const char* szPreTrainSetStateFilePath)
 #endif
 			}
 		}
+
+		archive.read("VGG_num_of_class", value);
+		m_num_classes = (int)value.toInt();
+
+		archive.read("VGG_config", value);
+		m_VGG_config = (VGG_CONFIG)value.toInt();
+		m_bEnableBatchNorm = IS_BATCHNORM_ENABLED(m_VGG_config);
+
+		archive.read("VGG_use_32x32_input", value);
+		m_use_32x32_input = value.toBool();
+
+		m_imageprocessor.Init(m_use_32x32_input ? 32 : VGG_INPUT_IMG_WIDTH, m_use_32x32_input ? 32 : VGG_INPUT_IMG_HEIGHT);
+
+		if (_Init() < 0)
+		{
+			printf("Failed to initialize the current network {num_of_classes: %d, VGG config: %d, use_32x32_input: %s}.\n",
+				m_num_classes, m_VGG_config, m_use_32x32_input?"yes":"no");
+			return -1;
+		}
+
+		load(archive);
 	}
 	catch (...)
 	{
-		printf("Failed to save the label names.\n");
+		printf("Failed to load the pre-trained VGG net state.\n");
 		return -1;
 	}
 
-	printf("Load the supported labels to be classified to %s.\n", szLabelFilePath.c_str());
 	return 0;
+}
+
+void VGGNet::Print()
+{
+	auto iter = _VGG_CONFIG_NAMES.find(m_VGG_config);
+	if (iter != _VGG_CONFIG_NAMES.end())
+		printf("Neutral Network: %s\n", iter->second.c_str());
+
+	printf("Enable Batch Normal: %s\n", m_bEnableBatchNorm?"yes":"no");
+
+	BaseNNet::Print();
 }
 
